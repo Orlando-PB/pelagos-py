@@ -153,6 +153,7 @@ def run_sphinx(source_dir, build_dir=None) -> None:
     """
     Build a PDF from a Sphinx source directory using the latexpdf builder.
 
+    This step requires Sphinx binaries to be installed and usable on the current workstation.
     Requires a conf.py to be located in the source directory.
 
     Parameters
@@ -161,7 +162,6 @@ def run_sphinx(source_dir, build_dir=None) -> None:
         Directory containing the .rst and conf.py files.
     build_dir : str or Path
         Directory where Sphinx output can be placed. Defaults to source_dir/_build.
-
     """
     source_dir = Path(source_dir).resolve()  # For simlinks
 
@@ -220,6 +220,7 @@ def build_qc_dict(data: xr.Dataset) -> dict:
                 },
             }
         }
+    TODO: Move to utils? Does it belong here?
     """
     qc_dict = {}
     for var in data.data_vars:
@@ -257,7 +258,26 @@ def build_qc_dict(data: xr.Dataset) -> dict:
 
 
 def flatten_qc_dict(qc_dict: dict) -> list:
-    #   Make the dictionary table-friendly
+    """
+    Flatten QC dictionary into list of table rows.
+    
+    Intended for use in report metrics (RstCloth).
+
+    Parameters
+    ----------
+    qc_dict : dict
+        Dictionary of QC results.
+    
+    Returns
+    -------
+    rows: list of list
+        A list of rows suitable for tabular display. Each row is a list:
+            [qc_var, test_name, flag, formatted_count]
+        - `qc_var` : str, the QC variable name
+        - `test_name` : str, the name of the QC test
+        - `flag` : str, QC flag value
+        - `formatted_count` : str, count formatted with thousands separator
+    """
     rows = []
 
     for qc_var, tests in qc_dict.items():
@@ -287,12 +307,18 @@ def flatten_qc_dict(qc_dict: dict) -> list:
 ### RST builders
 
 
-def run_info_page(rs, params_dict, glatters) -> None:
-    """Writes a page dedicated to pipeline run information.
+def run_info_page(rs, params_dict: dict, glatters: dict) -> None:
+    """
+    Writes a page dedicated to pipeline run information.
 
-    rs = RstCloth stream
-    params_dict = dict of global parameters from the pipeline configuration
-    glatters = glider attrs dictionary from self.context["data"], describing the glider and mission
+    Parameters
+    ----------
+    rs : RstCloth
+        Active RstCloth stream to which the page is written.
+    params_dict : dict
+        Dictionary of global pipeline parameters.
+    glatters : dict
+        Dictionary describing the glider and mission. OG1 includes "platform_vocabulary" for consistency.
     """
     rs.h2("Pipeline run information")
 
@@ -315,9 +341,11 @@ def run_info_page(rs, params_dict, glatters) -> None:
 
 
 def add_log(logfile, rs, ncols=4) -> None:
-    """Add and format the logfile as a table.
+    """
+    Add and format the logfile as a table.
 
-    Note: Requires a designated log_file be initialized in the global pipeline configuration parameters."""
+    Note: Requires a designated log_file be initialized in the global pipeline configuration parameters.
+    """
 
     rs.h2("Logfile of run")
     rs.newline()
@@ -342,22 +370,31 @@ def add_log(logfile, rs, ncols=4) -> None:
             rows.append((timestamp, level, location, message))
         f.close()
     #   Apply enough padding to the rows so that the report registers as "long enough" to format correctly
-    minlen = 28 #   approx for A4 in testing
-    if len(rows) < minlen:  
+    minlen = 28  #   approx for A4 in testing
+    if len(rows) < minlen:
         blank_row = tuple("" for _ in range(ncols))
         rows.extend([blank_row] * (minlen - len(rows)))
 
     rs.table_list(
         headers=["Time", "Level", "Location", "Message"],
         data=rows,
-        widths=[11,10,24,55],
+        widths=[11, 10, 24, 55],
         # width=100
     )
     rs.newline()
 
 
-def qc_section(doc, data) -> None:
-    """Wrapper for the QC section."""
+def qc_section(doc, data: xr.Dataset) -> None:
+    """
+    Wrapper for the QC section.
+
+    Parameters
+    ----------
+    doc : RstCloth object
+        The active RstCloth stream to be written to
+    data : xarray.core.dataset.Dataset
+        The entire dataset, including attributes
+    """
     doc.h2("Quality Control Summary")
     doc.newline()
 
@@ -442,7 +479,7 @@ def inset_geo(
 ):
     """
     Creates an inset geographic of two plots for additional positional awareness.
-    
+
     Unlike basic_geo(), this function will create an inset to make it clearer
     where the glider is operating.
 
@@ -550,7 +587,7 @@ def inset_geo(
         transform=ccrs.PlateCarree(),
         color="red",
         linewidth=1.2,
-    )   # Draw box on top of inset
+    )  # Draw box on top of inset
 
     #   Save the figure and write to .rst
     fname = outdir + f"geographic{ext}"
@@ -597,7 +634,7 @@ def qc_hist(
     var_source = var[:-3]  #   TEMP_QC --> TEMP
 
     fig, axs = plt.subplots(ncols=2, figsize=(8, 4), layout="constrained")
-    
+
     #   Prepare the histogram
     ylims = [1, len(data[var])]  #   Log axis cannot be 0
     if any(y < 1 for y in ylims):
@@ -724,7 +761,7 @@ class WriteDataReport(BaseStep):
                 project=self.parameters["title"],
                 author=current_info().get("user"),
                 master_doc=self.parameters.get("fname").replace(".rst", ""),
-                subtitle=data.attrs.get('dataset_id').replace("_","-"),
+                subtitle=data.attrs.get("dataset_id").replace("_", "-"),
             )
             run_sphinx(
                 odir,
