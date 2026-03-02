@@ -31,7 +31,6 @@ from importlib.metadata import version
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-import cartopy.mpl.gridliner as gridliner
 import xarray as xr
 from tqdm import tqdm
 import numpy as np
