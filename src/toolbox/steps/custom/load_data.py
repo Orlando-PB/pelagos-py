@@ -38,14 +38,14 @@ class LoadOG1(BaseStep):
             orig_len = len(self.data["TIME"])
             time_array = self.data["TIME"]
             
-            valid_mask = time_array >= pd.to_datetime(MIN_YEAR_FILTER)
-            valid_mask &= (time_array <= pd.Timestamp.now())
+            valid_mask = time_array >= np.datetime64(MIN_YEAR_FILTER)
+            valid_mask &= (time_array <= np.datetime64(pd.Timestamp.now()))
             
             if "DEPLOYMENT_TIME" in self.data.variables:
                 deploy_time = pd.to_datetime(self.data["DEPLOYMENT_TIME"].values)
                 if isinstance(deploy_time, pd.DatetimeIndex):
                     deploy_time = deploy_time[0]
-                valid_mask &= (time_array >= deploy_time)
+                valid_mask &= (time_array >= np.datetime64(deploy_time))
                 
             time_dim = self.data["TIME"].dims[0]
             self.data = self.data.isel({time_dim: valid_mask.values})
