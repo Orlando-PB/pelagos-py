@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Autonomy Toolbox</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/yaml/yaml.min.js"></script>
+
+    <style>
+        :root {
+            --bg-colour: #f4f4f5; --panel-bg: #ffffff; --text-colour: #18181b;
+            --border-colour: #e4e4e7; --primary-colour: #2563eb; --primary-hover: #1d4ed8;
+            --danger-colour: #ef4444; --error-bg: #fef2f2;
+            --radius: 4px; --spacing: 8px; --font-size: 13px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-colour); color: var(--text-colour);
+            font-size: var(--font-size); height: 100vh; width: 100vw;
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        .toolbar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: var(--spacing); background-color: var(--panel-bg); border-bottom: 1px solid var(--border-colour);
+        }
+        .toolbar-group { display: flex; gap: var(--spacing); align-items: center; }
+
+        button {
+            display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+            background-color: var(--panel-bg); border: 1px solid var(--border-colour);
+            border-radius: var(--radius); cursor: pointer; font-size: var(--font-size); color: var(--text-colour);
+        }
+        button.primary { background-color: var(--primary-colour); color: white; border-color: var(--primary-colour); }
+        button.danger { color: var(--danger-colour); }
+        button:hover:not(.primary):not(.danger) { background-color: #f4f4f5; }
+        button.primary:hover { background-color: var(--primary-hover); }
+
+        svg { width: 14px; height: 14px; }
+
+        .main-content { display: flex; flex: 1; overflow: hidden; }
+        .panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border-colour); background-color: var(--bg-colour); }
+        .panel:last-child { border-right: none; }
+        .panel-header { padding: 8px var(--spacing); font-weight: 600; border-bottom: 1px solid var(--border-colour); background-color: var(--panel-bg); }
+        .ui-scroll-area { flex: 1; overflow-y: auto; padding: var(--spacing); }
+
+        .CodeMirror { height: 100%; font-family: 'Menlo', 'Monaco', monospace; font-size: 13px; }
+        .error-banner { display: none; background-color: var(--error-bg); color: var(--danger-colour); padding: 8px; border-bottom: 1px solid var(--danger-colour); font-weight: 500; }
+
+        .pipeline-settings { background: #f8fafc; border: 1px solid #cbd5e1; padding: var(--spacing); border-radius: var(--radius); margin-bottom: 16px; }
+        .step-container { border: 1px solid var(--border-colour); border-radius: var(--radius); margin-bottom: var(--spacing); background-color: var(--panel-bg); }
+        .step-container.dragging { opacity: 0.4; }
+        .step-header { display: flex; align-items: center; gap: 8px; font-weight: 600; padding: 8px; border-bottom: 1px solid var(--border-colour); background-color: #fafafa; border-radius: var(--radius) var(--radius) 0 0; font-size: 11px; text-transform: uppercase; color: var(--primary-colour); cursor: pointer;}
+        .step-body { padding: var(--spacing); }
+        
+        .drag-handle { cursor: grab; color: #a1a1aa; padding-right: 4px; }
+        .drag-handle:active { cursor: grabbing; }
+        .btn-delete { margin-left: auto; padding: 2px; border: none; background: transparent; }
+
+        .form-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+        .form-row:last-child { margin-bottom: 0; }
+        .form-row label { width: 140px; font-weight: 500; color: #52525b; flex-shrink: 0; padding-top: 4px; }
+        input[type="text"], select { flex: 1; padding: 4px 6px; border: 1px solid var(--border-colour); border-radius: var(--radius); font-size: var(--font-size); width: 100%; }
+
+        /* Add Parameter UI */
+        .new-param-key { width: 130px !important; flex-shrink: 0; font-size: 11px !important; background: #fafafa; }
+        .btn-add-param { font-size: 11px; padding: 4px 8px; }
+
+        /* Custom QC Block Styling */
+        .qc-block { border-left: 2px solid var(--primary-colour); padding-left: 8px; margin-bottom: 12px; width: 100%; }
+        .qc-test-row { display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid var(--border-colour); padding: 4px 8px; margin-bottom: 4px; border-radius: var(--radius); }
+        .qc-test-name { font-weight: 600; font-size: 12px; color: #334155; }
+        
+        /* New Add Step Styling */
+        .add-step-wrapper { margin-top: 16px; display: flex; justify-content: center; padding: 12px; border: 1px dashed #cbd5e1; border-radius: var(--radius); background: #fafafa; }
+        #select-new-step { padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--primary-colour); color: var(--primary-colour); font-weight: 600; cursor: pointer; background: white; outline: none; text-align: center; }
+        #select-new-step:hover { background: #eff6ff; }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <div class="toolbar-group">
+            <button id="btn-toggle-view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 3H6a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h4M16 17l5-5-5-5M19.8 12H9"/></svg>Toggle UI</button>
+        </div>
+        <div class="toolbar-group">
+            <button id="btn-save" title="Cmd/Ctrl + S"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button>
+            <button id="btn-run" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>Run</button>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="panel" id="ui-panel">
+            <div class="panel-header">Pipeline Controls</div>
+            <div class="ui-scroll-area" id="steps-list"></div>
+        </div>
+        <div class="panel" id="yaml-panel">
+            <div class="panel-header">Configuration</div>
+            <div id="error-banner" class="error-banner"></div>
+            <textarea id="yaml-editor"></textarea>
+        </div>
+    </div>
+
+    <script>
+        const stepsList = document.getElementById('steps-list');
+        const errorBanner = document.getElementById('error-banner');
+        
+        let configData = {};
+        let dragSourceIndex = null;
+        let isSyncing = false;
+        let availableStepsList = [];
+        let availableQcList = [];
+
+        const editor = CodeMirror.fromTextArea(document.getElementById('yaml-editor'), {
+            mode: 'yaml', theme: 'dracula', lineNumbers: true, tabSize: 2
+        });
+
+        async function init() {
+            const resSteps = await fetch('/api/available-steps');
+            availableStepsList = (await resSteps.json()).steps.sort();
+            
+            const resQc = await fetch('/api/available-qc');
+            availableQcList = (await resQc.json()).tests.sort();
+            
+            const resConf = await fetch('/api/config');
+            isSyncing = true;
+            editor.setValue((await resConf.json()).yaml_content);
+            isSyncing = false;
+            
+            parseAndRenderUI();
+        }
+
+        function getNestedValue(obj, path) { return path.split('.').reduce((acc, part) => acc && acc[part], obj); }
+        function setNestedValue(obj, path, value) {
+            const keys = path.split('.'); let current = obj;
+            for (let i = 0; i < keys.length - 1; i++) {
+                if (!current[keys[i]]) current[keys[i]] = {};
+                current = current[keys[i]];
+            }
+            current[keys[keys.length - 1]] = value;
+        }
+        function deleteNestedValue(obj, path) {
+            const keys = path.split('.'); let current = obj;
+            for (let i = 0; i < keys.length - 1; i++) { current = current[keys[i]]; if(!current) return; }
+            delete current[keys[keys.length - 1]];
+        }
+
+        function parseAndRenderUI() {
+            try { configData = jsyaml.load(editor.getValue()); errorBanner.style.display = 'none'; } 
+            catch (e) { errorBanner.textContent = "YAML Error: " + e.message; errorBanner.style.display = 'block'; return; }
+
+            if (!configData) configData = { pipeline: {}, steps: [] };
+            if (!configData.pipeline) configData.pipeline = {};
+            if (!configData.steps) configData.steps = [];
+
+            stepsList.innerHTML = '';
+            
+            const pipelineSettings = document.createElement('div');
+            pipelineSettings.className = 'pipeline-settings';
+            pipelineSettings.innerHTML = `
+                <div style="font-weight:600; margin-bottom:8px; color:#334155;">General Settings</div>
+                <div class="form-row"><label>Name</label><input type="text" data-path="pipeline.name" value="${configData.pipeline.name || ''}"></div>
+                <div class="form-row"><label>Description</label><input type="text" data-path="pipeline.description" value="${configData.pipeline.description || ''}"></div>
+                <div class="form-row"><label>Visualisation</label><input type="checkbox" data-path="pipeline.visualisation" ${configData.pipeline.visualisation ? 'checked' : ''}></div>
+            `;
+            stepsList.appendChild(pipelineSettings);
+
+            configData.steps.forEach((step, idx) => {
+                const box = document.createElement('div');
+                box.className = 'step-container'; box.draggable = true; box.dataset.index = idx;
+
+                box.innerHTML = `
+                    <div class="step-header">
+                        <span class="drag-handle">⋮⋮</span> ${step.name}
+                        <button class="btn-delete danger" data-index="${idx}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    </div>
+                    <div class="step-body">
+                        ${renderParams(step.parameters || {}, `steps.${idx}.parameters`)}
+                        <div class="form-row" style="margin-top: 12px; border-top: 1px solid var(--border-colour); padding-top: 8px;"><label>Diagnostics</label><input type="checkbox" data-path="steps.${idx}.diagnostics" ${step.diagnostics ? 'checked' : ''}></div>
+                    </div>
+                `;
+
+                box.addEventListener('dragstart', () => { dragSourceIndex = idx; box.classList.add('dragging'); });
+                box.addEventListener('dragend', () => { box.classList.remove('dragging'); box.style.boxShadow = ''; });
+                box.addEventListener('dragover', e => {
+                    e.preventDefault(); const rect = box.getBoundingClientRect(); const mid = rect.top + rect.height / 2;
+                    box.style.boxShadow = e.clientY < mid ? "0 -2px 0 var(--primary-colour)" : "0 2px 0 var(--primary-colour)";
+                });
+                box.addEventListener('dragleave', () => box.style.boxShadow = '');
+                box.addEventListener('drop', e => {
+                    e.preventDefault(); box.style.boxShadow = '';
+                    const movedItem = configData.steps.splice(dragSourceIndex, 1)[0];
+                    let finalIndex = parseInt(box.dataset.index);
+                    if (dragSourceIndex < finalIndex && e.clientY >= (box.getBoundingClientRect().top + box.getBoundingClientRect().height / 2)) finalIndex++;
+                    configData.steps.splice(finalIndex, 0, movedItem);
+                    syncYaml(); parseAndRenderUI();
+                });
+                
+                box.querySelector('.step-header').addEventListener('click', (e) => {
+                    if (['INPUT', 'BUTTON', 'SELECT'].includes(e.target.tagName)) return;
+                    highlightYamlStep(step.name, idx);
+                });
+                stepsList.appendChild(box);
+            });
+
+            const addWrapper = document.createElement('div');
+            addWrapper.className = 'add-step-wrapper';
+            addWrapper.innerHTML = `
+                <select id="select-new-step">
+                    <option value="" disabled selected>+ Add New Step...</option>
+                    ${availableStepsList.map(s => `<option value="${s}">${s}</option>`).join('')}
+                </select>
+            `;
+            stepsList.appendChild(addWrapper);
+
+            attachListeners();
+        }
+
+        function renderParams(params, basePath) {
+            let html = '';
+            for (const [key, val] of Object.entries(params || {})) {
+                const currentPath = `${basePath}.${key}`;
+                
+                if (key === 'qc_settings' && typeof val === 'object') {
+                    html += `<div class="form-row"><label>QC Settings</label><div class="qc-block">`;
+                    for (const [qcTest, qcParams] of Object.entries(val || {})) {
+                        html += `
+                        <div class="qc-test-row">
+                            <span class="qc-test-name">${qcTest}</span>
+                            <button class="btn-delete danger btn-remove-qc" data-path="${currentPath}.${qcTest}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                        </div>`;
+                        html += `<div style="padding-left:12px; margin-bottom:8px;">${renderParams(qcParams, `${currentPath}.${qcTest}`)}</div>`;
+                    }
+                    html += `
+                        <div style="display:flex; gap:4px; margin-top:8px;">
+                            <select class="select-add-qc" data-path="${currentPath}"><option value="">-- Add Test --</option>${availableQcList.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
+                            <button class="primary btn-add-qc" data-path="${currentPath}">Add</button>
+                        </div>
+                    </div></div>`;
+                } 
+                else if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+                    html += `<div class="form-row"><label>${key}</label><div style="flex:1; padding-left:8px; border-left:2px solid var(--border-colour)">${renderParams(val, currentPath)}</div></div>`;
+                } else {
+                    const displayVal = Array.isArray(val) ? val.join(', ') : val;
+                    const isPath = key.toLowerCase().includes('path') || key.toLowerCase().includes('file');
+                    html += `<div class="form-row"><label>${key}</label><input type="text" data-path="${currentPath}" value='${displayVal}'>${isPath ? `<button class="btn-browse" data-path="${currentPath}">Browse</button>` : ''}</div>`;
+                }
+            }
+            
+            // Dynamic parameter addition interface
+            html += `
+                <div class="form-row" style="margin-top: 4px; border-top: 1px dashed var(--border-colour); padding-top: 4px;">
+                    <input type="text" class="new-param-key" placeholder="New key...">
+                    <button class="btn-add-param" data-path="${basePath}">Add</button>
+                </div>`;
+                
+            return html;
+        }
+
+        function attachListeners() {
+            stepsList.querySelectorAll('input[type="text"]:not(.new-param-key)').forEach(input => {
+                input.addEventListener('change', e => {
+                    let val = e.target.value;
+                    const existingVal = getNestedValue(configData, e.target.dataset.path);
+                    if (Array.isArray(existingVal)) { val = val.replace(/[\[\]"']/g, '').split(',').map(s=>s.trim()).filter(Boolean); } 
+                    else if (val === 'true') val = true; else if (val === 'false') val = false; else if (!isNaN(val) && val !== '') val = Number(val);
+                    setNestedValue(configData, e.target.dataset.path, val);
+                    syncYaml();
+                });
+            });
+
+            stepsList.querySelectorAll('input[type="checkbox"]').forEach(input => { input.addEventListener('change', e => { setNestedValue(configData, e.target.dataset.path, e.target.checked); syncYaml(); }); });
+            stepsList.querySelectorAll('.btn-delete[data-index]').forEach(btn => { btn.addEventListener('click', () => { configData.steps.splice(btn.dataset.index, 1); syncYaml(); parseAndRenderUI(); }); });
+            
+            stepsList.querySelectorAll('.btn-remove-qc').forEach(btn => {
+                btn.addEventListener('click', (e) => { deleteNestedValue(configData, e.currentTarget.dataset.path); syncYaml(); parseAndRenderUI(); });
+            });
+
+            stepsList.querySelectorAll('.btn-add-qc').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const path = e.currentTarget.dataset.path;
+                    const select = stepsList.querySelector(`select.select-add-qc[data-path="${path}"]`);
+                    if (select && select.value) { setNestedValue(configData, `${path}.${select.value}`, {}); syncYaml(); parseAndRenderUI(); }
+                });
+            });
+
+            // Logic to handle injecting generic parameters
+            stepsList.querySelectorAll('.btn-add-param').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const path = e.currentTarget.dataset.path;
+                    const keyInput = e.currentTarget.closest('.form-row').querySelector('.new-param-key');
+                    const key = keyInput.value.trim();
+                    if (!key) return;
+                    
+                    let targetObj = getNestedValue(configData, path);
+                    if (!targetObj) { targetObj = {}; setNestedValue(configData, path, targetObj); }
+                    targetObj[key] = "";
+                    syncYaml(); parseAndRenderUI();
+                });
+            });
+
+            const selStep = document.getElementById('select-new-step');
+            if(selStep) {
+                selStep.addEventListener('change', (e) => {
+                    if (!e.target.value) return;
+                    const initialParams = e.target.value === 'Apply QC' ? { qc_settings: {} } : {};
+                    configData.steps.push({ name: e.target.value, parameters: initialParams, diagnostics: false });
+                    e.target.value = ''; // Reset select
+                    syncYaml(); parseAndRenderUI(); stepsList.scrollTop = stepsList.scrollHeight;
+                });
+            }
+        }
+
+        function highlightYamlStep(stepName, stepIndex) {
+            const lines = editor.getValue().split('\n'); let matchCount = 0;
+            for (let i=0; i<lines.length; i++) {
+                if (lines[i].includes('- name: ' + stepName)) {
+                    if (matchCount === stepIndex) { editor.scrollIntoView({line: i, ch: 0}, 200); editor.setSelection({line: i, ch: 0}, {line: i, ch: lines[i].length}); break; }
+                    matchCount++;
+                }
+            }
+        }
+
+        function syncYaml() { isSyncing = true; editor.setValue(jsyaml.dump(configData, { indent: 2, noRefs: true })); isSyncing = false; }
+        editor.on('change', () => { if (!isSyncing) parseAndRenderUI(); });
+
+        // Up/Down Arrow Navigation for Input Fields
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                if (document.activeElement && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'text') {
+                    const inputs = Array.from(stepsList.querySelectorAll('input[type="text"]'));
+                    const index = inputs.indexOf(document.activeElement);
+                    if (index > -1) {
+                        e.preventDefault();
+                        const nextIndex = e.key === 'ArrowDown' ? index + 1 : index - 1;
+                        if (nextIndex >= 0 && nextIndex < inputs.length) inputs[nextIndex].focus();
+                    }
+                }
+            }
+            if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); document.getElementById('btn-save').click(); }
+        });
+
+        document.getElementById('btn-save').addEventListener('click', async () => { await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml_content: editor.getValue() }) }); });
+        document.getElementById('btn-run').addEventListener('click', async () => { document.getElementById('btn-save').click(); const res = await fetch('/api/run', { method: 'POST' }); alert((await res.json()).message); });
+        document.getElementById('btn-toggle-view').addEventListener('click', () => { const uiPanel = document.getElementById('ui-panel'); uiPanel.style.display = uiPanel.style.display === 'none' ? 'flex' : 'none'; });
+
+        init();
+    </script>
+</body>
+</html>
