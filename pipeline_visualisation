@@ -1,0 +1,4 @@
+digraph Pipeline {
+	"Load OG1" [label="Load OG1" color=black fillcolor=white style=filled]
+	"Find Profiles Beta" [label="Find Profiles Beta" color=red fillcolor=lightblue style=filled]
+}

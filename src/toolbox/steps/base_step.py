@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """This module defines the base class for pipeline steps and configurations."""
-
 from toolbox.utils.config_mirror import ConfigMirrorMixin
 import warnings
 import logging
@@ -40,36 +39,50 @@ def register_step(cls):
 class BaseStep(ConfigMirrorMixin):
     """
     Base class for pipeline steps with config-mirroring support.
-    Every concrete subclass (registered via @register_step) inherits this.
     """
+    
+    # OVERRIDE THIS IN SUBCLASSES: Defines inputs, defaults, and descriptions
+    parameter_schema = {}
 
     def __init__(self, name, parameters=None, diagnostics=False, context=None):
-        # === Core behaviour (same as before) ===
         self.name = name
-        self.parameters = parameters or {}
         self.diagnostics = diagnostics
         self.context = context or {}
-
+        
         # Get child logger initialized in pipeline.py
         self.logger = logging.getLogger(f"toolbox.pipeline.step.{self.name}")
 
+        # Inject defaults from schema if they are missing from user parameters
+        self.parameters = parameters or {}
+        for param_key, param_meta in self.parameter_schema.items():
+            if param_key not in self.parameters:
+                self.parameters[param_key] = param_meta.get("default")
+
         # === Initialise config mirror system ===
         self._init_config_mirror()
-        # canonical parameters go in private store
+        
         self._parameters = {
             "name": self.name,
             "parameters": self.parameters,
             "diagnostics": self.diagnostics,
         }
-        # mirror parameters & diagnostics as attributes
+        
         self._reset_parameter_bridge(mirror_keys=["parameters", "diagnostics"])
 
-        # expose param keys as attributes (for user convenience)
+        # Expose param keys as attributes (for user convenience)
         for key, value in self.parameters.items():
             setattr(self, key, value)
 
-        # Continue method resolution order
         super().__init__()
+        
+    @classmethod
+    def get_schema(cls):
+        """Allows the FastAPI backend to read the required inputs dynamically."""
+        return cls.parameter_schema
+
+    def is_web_mode(self):
+        """Check if we are being executed by the FastAPI web backend."""
+        return os.environ.get("AUTONOMY_WEB_MODE") == "1"
 
     def run(self):
         """To be implemented by subclasses."""
@@ -99,11 +112,7 @@ class BaseStep(ConfigMirrorMixin):
     # ----------- Config Handling -----------
 
     def update_parameters(self, **kwargs):
-        """
-        Update parameter values both in attributes and in private store.
-        Example:
-            self.update_parameters(file_path='newfile.nc', add_meta=False)
-        """
+        """Update parameter values both in attributes and in private store."""
         for k, v in kwargs.items():
             self.parameters[k] = v
             setattr(self, k, v)

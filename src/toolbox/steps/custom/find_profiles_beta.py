@@ -27,17 +27,9 @@ import matplotlib.dates as mdates
 from matplotlib.collections import LineCollection
 import tkinter as tk
 from scipy.signal import savgol_filter
+import os
 
-DEFAULT_RESAMPLE_CADENCE = "30s"
-DEFAULT_GRADIENT_THRESHOLDS = [0.033, -0.033]
-DEFAULT_HORIZ_GRADIENT_THRESHOLD = 0.01
-DEFAULT_FILTER_WINDOW_SIZES = [1, 2]
-DEFAULT_EDGE_SQUEEZE = 0
-DEFAULT_DIVE_SCALE = 15
-DEFAULT_MAX_DEPTH_GAP = 60.0
-DEFAULT_MIN_HORIZONTAL_DURATION = "20min"
-DEFAULT_MIN_HORIZONTAL_DEPTH = 1.0
-
+# Internal constants (not user parameters)
 FIXED_SAVGOL_WINDOW_VERT = 5
 FIXED_SAVGOL_WINDOW_HORIZ = 3
 FIXED_SAVGOL_POLY = 2
@@ -68,49 +60,8 @@ def _parse_windows(win_sizes, cadence):
         else:
             parsed.append(int(w))
     return parsed
+
 def find_profiles_beta(df_sorted, cadence, filter_win_sizes, gradient_thresholds, horiz_grad_thresh, edge_squeeze, dive_scale, max_depth_gap, min_horizontal_duration, min_horizontal_depth, depth_col):
-    """
-    Identifies and classifies vertical and horizontal profiles from depth-time data.
-
-    This function applies compound smoothing and velocity thresholds to classify 
-    vehicle movements into descending (+1), ascending (-1), horizontal (0), 
-    or turning (NaN) segments. Vertical profiles are identified first based on 
-    steep vertical velocities and depth spans. Unassigned data is then evaluated 
-    for horizontal profiles based on flatter velocities, minimum depth, and duration.
-    Final profile IDs are assigned chronologically.
-
-    Parameters
-    ----------
-    df_sorted : pandas.DataFrame
-        Time-indexed dataframe containing the depth measurements.
-    cadence : str
-        Resampling frequency string (e.g., '30s') used to regularise the time series.
-    filter_win_sizes : list
-        Two-element list defining the rolling median and mean window sizes.
-    gradient_thresholds : list
-        [positive_threshold, negative_threshold] for vertical velocity bounds (m/s).
-    horiz_grad_thresh : float
-        Maximum absolute velocity (m/s) to be considered a horizontal profile.
-    edge_squeeze : int
-        Number of points to iteratively erode from the edges of turning regions.
-    dive_scale : float
-        Minimum total vertical distance (m) required for a valid vertical profile.
-    max_depth_gap : float
-        Maximum allowable depth gap (m) between consecutive points in a profile.
-    min_horizontal_duration : str
-        Minimum time duration string (e.g., '20min') for a horizontal profile.
-    min_horizontal_depth : float
-        Minimum depth (m) required to evaluate a horizontal profile.
-    depth_col : str
-        Name of the column containing depth or pressure data.
-
-    Returns
-    -------
-    df_out : pandas.DataFrame
-        Dataframe aligned to original indices with added 'PROFILE_ID', 'DIRECTION', and 'GRADIENT'.
-    df : pandas.DataFrame
-        The resampled and smoothed diagnostic dataframe.
-    """
     df = df_sorted[depth_col].resample(cadence).mean().to_frame()
     df[depth_col] = df[depth_col].interpolate(method='linear')
 
@@ -233,7 +184,6 @@ def find_profiles_beta(df_sorted, cadence, filter_win_sizes, gradient_thresholds
             df_out.loc[sub_group.index, "is_turning"] = False
             valid_pid_counter += 1
 
-    # --- Chronological Sorting ---
     valid_mask = df_out["VALID_PROFILE"].notna()
     profile_transitions = valid_mask & (df_out["VALID_PROFILE"] != df_out["VALID_PROFILE"].shift(1))
     
@@ -245,37 +195,41 @@ def find_profiles_beta(df_sorted, cadence, filter_win_sizes, gradient_thresholds
 
     return df_out, df
 
-
 @register_step
 class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
     step_name = "Find Profiles Beta"
+    
+    # NEW: The schema acts as the single source of truth for parameters!
+    parameter_schema = {
+        "depth_column": {"type": str, "default": "PRES", "description": "Name of the depth column"},
+        "resample_cadence": {"type": str, "default": "30s"},
+        "gradient_thresholds": {"type": list, "default": [0.033, -0.033]},
+        "horiz_gradient_threshold": {"type": float, "default": 0.01},
+        "filter_window_sizes": {"type": list, "default": [1, 2]},
+        "edge_squeeze": {"type": int, "default": 0},
+        "dive_scale": {"type": float, "default": 15.0},
+        "max_depth_gap": {"type": float, "default": 60.0},
+        "min_horizontal_duration": {"type": str, "default": "20min"},
+        "min_horizontal_depth": {"type": float, "default": 1.0}
+    }
 
     def run(self):
         self.log("Attempting to designate profile numbers, directions, and gradients")
         self.filter_qc()
 
-        self.depth_col = self.parameters.get("depth_column")
-        if not self.depth_col:
+        # Notice how clean this is. We don't use .get() anymore because BaseStep
+        # guarantees these exist as attributes!
+        if not self.depth_column:
             if "PRES_ENG" in self.data.variables:
-                self.depth_col = "PRES_ENG"
+                self.depth_column = "PRES_ENG"
             elif "PRES" in self.data.variables:
-                self.depth_col = "PRES"
+                self.depth_column = "PRES"
             else:
                 raise ValueError("Neither PRES_ENG nor PRES variables found in the dataset.")
-        elif self.depth_col not in self.data.variables:
-            raise ValueError(f"Specified depth column '{self.depth_col}' not found in the dataset.")
+        elif self.depth_column not in self.data.variables:
+            raise ValueError(f"Specified depth column '{self.depth_column}' not found in the dataset.")
 
-        self.cadence = self.parameters.get("resample_cadence", DEFAULT_RESAMPLE_CADENCE)
-        self.gradient_thresholds = self.parameters.get("gradient_thresholds", DEFAULT_GRADIENT_THRESHOLDS)
-        self.horiz_grad_thresh = self.parameters.get("horiz_gradient_threshold", DEFAULT_HORIZ_GRADIENT_THRESHOLD)
-        self.filter_win_sizes = self.parameters.get("filter_window_sizes", DEFAULT_FILTER_WINDOW_SIZES)
-        self.edge_squeeze = self.parameters.get("edge_squeeze", DEFAULT_EDGE_SQUEEZE)
-        self.max_depth_gap = self.parameters.get("max_depth_gap", DEFAULT_MAX_DEPTH_GAP)
-        self.dive_scale = self.parameters.get("dive_scale", DEFAULT_DIVE_SCALE)
-        self.min_horizontal_duration = self.parameters.get("min_horizontal_duration", DEFAULT_MIN_HORIZONTAL_DURATION)
-        self.min_horizontal_depth = self.parameters.get("min_horizontal_depth", DEFAULT_MIN_HORIZONTAL_DEPTH)
-
-        if self.depth_col == "PRES_ENG" and "PRES" in self.data.variables:
+        if self.depth_column == "PRES_ENG" and "PRES" in self.data.variables:
             pres_max = float(self.data["PRES"].max())
             eng_max = float(self.data["PRES_ENG"].max())
             ratio = pres_max / eng_max if eng_max != 0 else 1
@@ -283,17 +237,32 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
                 self.data["PRES_ENG"] = self.data["PRES_ENG"] * 10
 
         if self.diagnostics:
-            root = self.generate_diagnostics()
-            root.mainloop()
+            if self.is_web_mode():
+                # In web mode, generate the plot, save it, and move on.
+                fig = self.create_diagnostic_plot()
+                
+                # Make sure an output directory exists
+                out_dir = self.context.get("global_parameters", {}).get("out_directory", "./pipeline_output")
+                os.makedirs(out_dir, exist_ok=True)
+                
+                # Save plot
+                plot_path = os.path.join(out_dir, "find_profiles_beta_diagnostic.png")
+                fig.savefig(plot_path, dpi=200, bbox_inches="tight")
+                plt.close(fig)
+                self.log(f"Web Mode: Diagnostic plot saved to {plot_path}")
+            else:
+                # If running locally, open the Tkinter parameter adjustment GUI
+                root = self.launch_interactive_gui()
+                root.mainloop()
 
-        df_raw = self.data[["TIME", self.depth_col]].to_dataframe().reset_index()
-        df_sorted = df_raw.dropna(subset=[self.depth_col, "TIME"]).sort_values("TIME").set_index("TIME")
+        df_raw = self.data[["TIME", self.depth_column]].to_dataframe().reset_index()
+        df_sorted = df_raw.dropna(subset=[self.depth_column, "TIME"]).sort_values("TIME").set_index("TIME")
 
         df_out, _ = find_profiles_beta(
-            df_sorted, self.cadence, self.filter_win_sizes, 
-            self.gradient_thresholds, self.horiz_grad_thresh, self.edge_squeeze,
+            df_sorted, self.resample_cadence, self.filter_window_sizes, 
+            self.gradient_thresholds, self.horiz_gradient_threshold, self.edge_squeeze,
             self.dive_scale, self.max_depth_gap, self.min_horizontal_duration,
-            self.min_horizontal_depth, self.depth_col
+            self.min_horizontal_depth, self.depth_column
         )
 
         df_out = df_out.reset_index()
@@ -325,84 +294,90 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
         }
 
         self.generate_qc({
-            "PROFILE_NUMBER_QC": ["TIME_QC", f"{self.depth_col}_QC"],
-            "PROFILE_DIRECTION_QC": ["TIME_QC", f"{self.depth_col}_QC"],
-            "PROFILE_GRADIENT_QC": ["TIME_QC", f"{self.depth_col}_QC"]
+            "PROFILE_NUMBER_QC": ["TIME_QC", f"{self.depth_column}_QC"],
+            "PROFILE_DIRECTION_QC": ["TIME_QC", f"{self.depth_column}_QC"],
+            "PROFILE_GRADIENT_QC": ["TIME_QC", f"{self.depth_column}_QC"]
         })
 
         self.context["data"] = self.data
         return self.context
 
-    def generate_diagnostics(self):
-        def generate_plot():
-            mpl.use("TkAgg")
+    def create_diagnostic_plot(self):
+        """Builds the matplotlib figure and returns it without showing it."""
+        df_raw = self.data[["TIME", self.depth_column]].to_dataframe().reset_index()
+        df_sorted = df_raw.dropna(subset=[self.depth_column, "TIME"]).sort_values("TIME").set_index("TIME")
 
-            df_raw = self.data[["TIME", self.depth_col]].to_dataframe().reset_index()
-            df_sorted = df_raw.dropna(subset=[self.depth_col, "TIME"]).sort_values("TIME").set_index("TIME")
+        df_out, df_smooth = find_profiles_beta(
+            df_sorted, self.resample_cadence, self.filter_window_sizes, 
+            self.gradient_thresholds, self.horiz_gradient_threshold, self.edge_squeeze,
+            self.dive_scale, self.max_depth_gap, self.min_horizontal_duration, 
+            self.min_horizontal_depth, self.depth_column
+        )
 
-            df_out, df_smooth = find_profiles_beta(
-                df_sorted, self.cadence, self.filter_win_sizes, 
-                self.gradient_thresholds, self.horiz_grad_thresh, self.edge_squeeze,
-                self.dive_scale, self.max_depth_gap, self.min_horizontal_duration, 
-                self.min_horizontal_depth, self.depth_col
-            )
+        fig_main, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 2, 1]})
 
-            fig_main, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 2, 1]})
+        up_mask = df_out["DIRECTION"] == 1
+        down_mask = df_out["DIRECTION"] == -1
+        horiz_mask = df_out["DIRECTION"] == 0
+        turn_mask = df_out["PROFILE_ID"].isna()
 
-            up_mask = df_out["DIRECTION"] == 1
-            down_mask = df_out["DIRECTION"] == -1
-            horiz_mask = df_out["DIRECTION"] == 0
-            turn_mask = df_out["PROFILE_ID"].isna()
+        x_num = mdates.date2num(df_smooth.index)
+        points = np.array([x_num, -df_smooth["SMOOTH_DEPTH"].values]).T.reshape(-1, 1, 2)
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+        
+        c_map = {"up": COLOUR_UP, "down": COLOUR_DOWN, "horizontal": COLOUR_HORIZONTAL, "turning": COLOUR_TURNING}
+        colours = [c_map[state] for state in df_smooth["STATE"].iloc[:-1]]
+        
+        lc = LineCollection(segments, colors=colours, linewidths=LINE_WIDTH, zorder=0, alpha=0.7)
+        ax1.add_collection(lc)
 
-            x_num = mdates.date2num(df_smooth.index)
-            points = np.array([x_num, -df_smooth["SMOOTH_DEPTH"].values]).T.reshape(-1, 1, 2)
-            segments = np.concatenate([points[:-1], points[1:]], axis=1)
-            
-            c_map = {"up": COLOUR_UP, "down": COLOUR_DOWN, "horizontal": COLOUR_HORIZONTAL, "turning": COLOUR_TURNING}
-            colours = [c_map[state] for state in df_smooth["STATE"].iloc[:-1]]
-            
-            lc = LineCollection(segments, colors=colours, linewidths=LINE_WIDTH, zorder=0, alpha=0.7)
-            ax1.add_collection(lc)
+        ax1.plot(df_out[turn_mask].index, -df_out[turn_mask][self.depth_column], marker=".", ls="", ms=MARKER_SIZE, color=COLOUR_RAW, alpha=0.5, zorder=1, label="Unassigned Raw")
+        
+        for pid in df_out["PROFILE_ID"].dropna().unique():
+            mask = df_out["PROFILE_ID"] == pid
+            direction = df_out.loc[mask, "DIRECTION"].iloc[0]
+            if direction == 1:
+                c = COLOUR_UP
+            elif direction == -1:
+                c = COLOUR_DOWN
+            else:
+                c = COLOUR_HORIZONTAL
+            ax1.plot(df_out[mask].index, -df_out[mask][self.depth_column], marker=".", ls="", ms=MARKER_SIZE+1, color=c, zorder=3)
 
-            ax1.plot(df_out[turn_mask].index, -df_out[turn_mask][self.depth_col], marker=".", ls="", ms=MARKER_SIZE, color=COLOUR_RAW, alpha=0.5, zorder=1, label="Unassigned Raw")
-            
-            for pid in df_out["PROFILE_ID"].dropna().unique():
-                mask = df_out["PROFILE_ID"] == pid
-                direction = df_out.loc[mask, "DIRECTION"].iloc[0]
-                if direction == 1:
-                    c = COLOUR_UP
-                elif direction == -1:
-                    c = COLOUR_DOWN
-                else:
-                    c = COLOUR_HORIZONTAL
-                ax1.plot(df_out[mask].index, -df_out[mask][self.depth_col], marker=".", ls="", ms=MARKER_SIZE+1, color=c, zorder=3)
+        from matplotlib.lines import Line2D
+        custom_lines = [
+            Line2D([0], [0], color=COLOUR_UP, lw=LINE_WIDTH),
+            Line2D([0], [0], color=COLOUR_DOWN, lw=LINE_WIDTH),
+            Line2D([0], [0], color=COLOUR_HORIZONTAL, lw=LINE_WIDTH),
+            Line2D([0], [0], color=COLOUR_TURNING, lw=LINE_WIDTH),
+            Line2D([0], [0], marker='.', color='w', markerfacecolor=COLOUR_RAW, markersize=MARKER_SIZE+5)
+        ]
+        ax1.legend(custom_lines, ['Intended Ascent', 'Intended Descent', 'Intended Horizontal', 'Intended Turning', 'Unassigned Raw'], loc="upper right")
 
-            from matplotlib.lines import Line2D
-            custom_lines = [
-                Line2D([0], [0], color=COLOUR_UP, lw=LINE_WIDTH),
-                Line2D([0], [0], color=COLOUR_DOWN, lw=LINE_WIDTH),
-                Line2D([0], [0], color=COLOUR_HORIZONTAL, lw=LINE_WIDTH),
-                Line2D([0], [0], color=COLOUR_TURNING, lw=LINE_WIDTH),
-                Line2D([0], [0], marker='.', color='w', markerfacecolor=COLOUR_RAW, markersize=MARKER_SIZE+5)
-            ]
-            ax1.legend(custom_lines, ['Intended Ascent', 'Intended Descent', 'Intended Horizontal', 'Intended Turning', 'Unassigned Raw'], loc="upper right")
+        ax1.set_ylabel(self.depth_column)
+        ax1.set_title("Profile Classification Overlay")
 
-            ax1.set_ylabel(self.depth_col)
-            ax1.set_title("Profile Classification Overlay")
+        ax2.plot(df_smooth.index, df_smooth["SMOOTH_VELOCITY"], color=COLOUR_VELOCITY, lw=LINE_WIDTH, label="Smoothed Velocity (Vert)")
+        ax2.axhline(self.gradient_thresholds[0], color=COLOUR_TURNING, lw=0.8, ls="--", alpha=0.5)
+        ax2.axhline(self.gradient_thresholds[1], color=COLOUR_TURNING, lw=0.8, ls="--", alpha=0.5)
+        ax2.axhline(0, color="black", lw=0.8)
+        ax2.set_ylabel("Velocity")
+        ax2.legend(loc="upper right")
 
-            ax2.plot(df_smooth.index, df_smooth["SMOOTH_VELOCITY"], color=COLOUR_VELOCITY, lw=LINE_WIDTH, label="Smoothed Velocity (Vert)")
-            ax2.axhline(self.gradient_thresholds[0], color=COLOUR_TURNING, lw=0.8, ls="--", alpha=0.5)
-            ax2.axhline(self.gradient_thresholds[1], color=COLOUR_TURNING, lw=0.8, ls="--", alpha=0.5)
-            ax2.axhline(0, color="black", lw=0.8)
-            ax2.set_ylabel("Velocity")
-            ax2.legend(loc="upper right")
+        ax3.plot(df_out.index, df_out["PROFILE_ID"], color="gray", marker=".", ls="", ms=MARKER_SIZE)
+        ax3.set_ylabel("Profile ID")
+        ax3.set_xlabel("Time")
 
-            ax3.plot(df_out.index, df_out["PROFILE_ID"], color="gray", marker=".", ls="", ms=MARKER_SIZE)
-            ax3.set_ylabel("Profile ID")
-            ax3.set_xlabel("Time")
+        fig_main.tight_layout()
+        return fig_main
 
-            fig_main.tight_layout()
-            fig_main.show()
+    def launch_interactive_gui(self):
+        """Constructs the Tkinter GUI and plots the interactive figure."""
+        mpl.use("TkAgg")
+
+        def update_plot():
+            fig = self.create_diagnostic_plot()
+            fig.show()
 
         root = tk.Tk()
         root.title("Parameter Adjustment")
@@ -411,7 +386,7 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
 
         tk.Label(root, text="Cadence").grid(row=0, column=0, sticky="e", padx=5, pady=2)
         ent_cadence = tk.Entry(root, width=8)
-        ent_cadence.insert(0, self.cadence)
+        ent_cadence.insert(0, self.resample_cadence)
         ent_cadence.grid(row=0, column=1, sticky="w", padx=5, pady=2)
         entries["resample_cadence"] = ent_cadence
 
@@ -428,12 +403,12 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
 
         tk.Label(root, text="Win Med/Mean").grid(row=1, column=0, sticky="e", padx=5, pady=2)
         ent_win_med = tk.Entry(root, width=6)
-        ent_win_med.insert(0, str(self.filter_win_sizes[0]))
+        ent_win_med.insert(0, str(self.filter_window_sizes[0]))
         ent_win_med.grid(row=1, column=1, sticky="w", padx=5)
         entries["win_med"] = ent_win_med
 
         ent_win_mean = tk.Entry(root, width=6)
-        ent_win_mean.insert(0, str(self.filter_win_sizes[1]))
+        ent_win_mean.insert(0, str(self.filter_window_sizes[1]))
         ent_win_mean.grid(row=1, column=2, sticky="w", padx=5)
         entries["win_mean"] = ent_win_mean
 
@@ -445,7 +420,7 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
 
         tk.Label(root, text="Horiz Grad").grid(row=2, column=0, sticky="e", padx=5, pady=2)
         ent_h_grad = tk.Entry(root, width=6)
-        ent_h_grad.insert(0, str(self.horiz_grad_thresh))
+        ent_h_grad.insert(0, str(self.horiz_gradient_threshold))
         ent_h_grad.grid(row=2, column=1, sticky="w", padx=5, pady=2)
         entries["horiz_gradient_threshold"] = ent_h_grad
 
@@ -484,13 +459,13 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
             root.destroy()
 
         def on_regenerate(event=None):
-            self.cadence = entries["resample_cadence"].get()
+            self.resample_cadence = entries["resample_cadence"].get()
             self.gradient_thresholds = [float(entries["grad_pos"].get()), float(entries["grad_neg"].get())]
-            self.horiz_grad_thresh = float(entries["horiz_gradient_threshold"].get())
+            self.horiz_gradient_threshold = float(entries["horiz_gradient_threshold"].get())
             
             med_val = entries["win_med"].get()
             mean_val = entries["win_mean"].get()
-            self.filter_win_sizes = [
+            self.filter_window_sizes = [
                 med_val if not med_val.isdigit() else int(med_val), 
                 mean_val if not mean_val.isdigit() else int(mean_val)
             ]
@@ -501,14 +476,14 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
             self.min_horizontal_duration = entries["min_horizontal_duration"].get()
             
             plt.close('all')
-            generate_plot()
+            update_plot()
 
         def on_save(event=None):
             self.update_parameters(
-                resample_cadence=self.cadence,
+                resample_cadence=self.resample_cadence,
                 gradient_thresholds=self.gradient_thresholds,
-                horiz_gradient_threshold=self.horiz_grad_thresh,
-                filter_window_sizes=self.filter_win_sizes,
+                horiz_gradient_threshold=self.horiz_gradient_threshold,
+                filter_window_sizes=self.filter_window_sizes,
                 edge_squeeze=self.edge_squeeze,
                 dive_scale=self.dive_scale,
                 max_depth_gap=self.max_depth_gap,
@@ -530,5 +505,5 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
         tk.Button(btn_frame, text="Save", command=on_save).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Cancel", command=on_cancel).pack(side="left", padx=5)
 
-        generate_plot()
+        update_plot()
         return root

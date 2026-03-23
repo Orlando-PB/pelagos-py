@@ -27,7 +27,16 @@ MIN_YEAR_FILTER = "1990-01-01"
 class LoadOG1(BaseStep):
     step_name = "Load OG1"
 
+    # Schema defines the inputs and defaults for the web UI
+    parameter_schema = {
+        "file_path": {"type": str, "default": "", "description": "Path to the input NetCDF file"}
+    }
+
     def run(self):
+        # file_path is automatically injected as self.file_path by BaseStep
+        if not self.file_path:
+            raise ValueError("No file_path specified for Load OG1.")
+            
         self.data = xr.open_dataset(self.file_path)
         self.log(f"Loaded data from {self.file_path}")
 
@@ -76,17 +85,6 @@ class LoadOG1(BaseStep):
                 "'TIME' is not monotonically increasing. This may cause fatal issues in processing. "
                 "Please check the quality of your input data."
             )
-
-        # TODO: Remove QC column resetting when BODC has properly implemented QC outputs
-        # Reset all data variable flags. Set unchecked data flags to 0 and missing data flags to 9
-        # cols_to_qc = [
-        #     var for var in self.data.data_vars
-        #     if var.isupper() and (var not in self.data.dims) and ("_QC" not in var)
-        # ]
-        # data_subset = self.data[cols_to_qc]
-        # masks = xr.where(data_subset.isnull(), 9, 0).astype(int)
-        # masks = masks.rename({var: f"{var}_QC" for var in cols_to_qc})
-        # self.data.update(masks)
 
         # Generate diagnostics if enabled
         if self.diagnostics:

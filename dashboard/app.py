@@ -4,6 +4,7 @@ import subprocess
 import sys
 import shutil
 import asyncio
+import yaml
 from collections import deque
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -17,10 +18,26 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG_PATH = os.path.join(BASE_DIR, "pipeline_config.yaml")
 TEMPLATE_CONFIG_PATH = os.path.join(BASE_DIR, "default_pipeline.yaml")
 INDEX_HTML_PATH = os.path.join(BASE_DIR, "index.html")
+
+
+PIPELINE_ORDER = [
+    "Load OG1",
+    "Find Profiles Beta"
+]
+
 # ---------------------
 
 app = FastAPI(title="Autonomy Toolbox Dashboard")
 app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
+
+
+try:
+    from toolbox.steps.base_step import REGISTERED_STEPS
+    from toolbox.steps.base_test import REGISTERED_QC
+    print("Toolbox modules pre-loaded successfully.")
+except Exception as e:
+    print(f"Warning: Could not pre-load toolbox modules: {e}")
+# ------------------------
 
 # Holds the last 2000 lines of terminal output
 log_buffer = deque(maxlen=2000) 
@@ -33,23 +50,6 @@ def serve_dashboard():
     with open(INDEX_HTML_PATH, "r") as f:
         return f.read()
 
-@app.get("/api/default-config")
-def get_default_config():
-    with open(TEMPLATE_CONFIG_PATH, "r") as f:
-        return {"yaml_content": f.read()}
-
-@app.get("/api/config")
-def get_config():
-    # If no config exists, copy the default template over to start
-    if not os.path.exists(DEFAULT_CONFIG_PATH):
-        if os.path.exists(TEMPLATE_CONFIG_PATH):
-            shutil.copy(TEMPLATE_CONFIG_PATH, DEFAULT_CONFIG_PATH)
-        else:
-            raise HTTPException(status_code=500, detail="default_pipeline.yaml is missing.")
-            
-    with open(DEFAULT_CONFIG_PATH, "r") as f:
-        return {"yaml_content": f.read()}
-
 @app.post("/api/config")
 def save_config(payload: ConfigPayload):
     with open(DEFAULT_CONFIG_PATH, "w") as f:
@@ -59,6 +59,52 @@ def save_config(payload: ConfigPayload):
 @app.get("/api/available-steps")
 def get_available_steps():
     return {"steps": []} 
+
+@app.get("/api/default-config")
+def get_default_config():
+    """Dynamically builds the default YAML template by reading step schemas."""
+    from toolbox.steps.base_step import REGISTERED_STEPS
+    
+    steps_config = []
+    
+    for step_name in PIPELINE_ORDER:
+        if step_name in REGISTERED_STEPS:
+            cls = REGISTERED_STEPS[step_name]
+            schema = cls.get_schema()
+            
+            # Extract just the default values for the YAML
+            default_params = {k: v.get("default") for k, v in schema.items()}
+            
+            steps_config.append({
+                "name": step_name,
+                "parameters": default_params,
+                "diagnostics": False
+            })
+            
+    default_yaml_dict = {
+        "pipeline": {
+            "name": "Modern Glider Pipeline",
+            "description": "Dynamic pipeline generated from step schemas",
+            "visualisation": False
+        },
+        "steps": steps_config
+    }
+    
+    # Dump to a formatted YAML string
+    yaml_str = yaml.dump(default_yaml_dict, sort_keys=False, default_flow_style=False)
+    return {"yaml_content": yaml_str}
+
+@app.get("/api/config")
+def get_config():
+    """Returns the user's saved config, or generates a fresh one from schemas if missing."""
+    if not os.path.exists(DEFAULT_CONFIG_PATH):
+        # Generate the default config dynamically and save it
+        default_content = get_default_config()["yaml_content"]
+        with open(DEFAULT_CONFIG_PATH, "w") as f:
+            f.write(default_content)
+            
+    with open(DEFAULT_CONFIG_PATH, "r") as f:
+        return {"yaml_content": f.read()}
 
 @app.get("/api/browse")
 def browse_file():
@@ -98,10 +144,14 @@ async def run_pipeline():
     
     try:
         # Launch the subprocess asynchronously
+        env = os.environ.copy()
+        env["AUTONOMY_WEB_MODE"] = "1"
+                
         process = await asyncio.create_subprocess_exec(
             sys.executable, "-c", script,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT
+            stderr=asyncio.subprocess.STDOUT,
+            env=env
         )
 
         # Stream output directly into the log buffer while the process runs
