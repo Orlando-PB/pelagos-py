@@ -1,6 +1,10 @@
 import os
 import uvicorn
 import subprocess
+import sys
+import shutil
+import asyncio
+from collections import deque
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,13 +15,15 @@ HOST = "127.0.0.1"
 PORT = 8000
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG_PATH = os.path.join(BASE_DIR, "pipeline_config.yaml")
+TEMPLATE_CONFIG_PATH = os.path.join(BASE_DIR, "default_pipeline.yaml")
 INDEX_HTML_PATH = os.path.join(BASE_DIR, "index.html")
 # ---------------------
 
 app = FastAPI(title="Autonomy Toolbox Dashboard")
-
-# Mount the base directory so we can serve steps.js
 app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
+
+# Holds the last 2000 lines of terminal output
+log_buffer = deque(maxlen=2000) 
 
 class ConfigPayload(BaseModel):
     yaml_content: str
@@ -27,11 +33,20 @@ def serve_dashboard():
     with open(INDEX_HTML_PATH, "r") as f:
         return f.read()
 
+@app.get("/api/default-config")
+def get_default_config():
+    with open(TEMPLATE_CONFIG_PATH, "r") as f:
+        return {"yaml_content": f.read()}
+
 @app.get("/api/config")
 def get_config():
+    # If no config exists, copy the default template over to start
     if not os.path.exists(DEFAULT_CONFIG_PATH):
-        with open(DEFAULT_CONFIG_PATH, "w") as f:
-            f.write("pipeline:\n  name: New Pipeline\n  description: ''\n  visualisation: false\nsteps: []")
+        if os.path.exists(TEMPLATE_CONFIG_PATH):
+            shutil.copy(TEMPLATE_CONFIG_PATH, DEFAULT_CONFIG_PATH)
+        else:
+            raise HTTPException(status_code=500, detail="default_pipeline.yaml is missing.")
+            
     with open(DEFAULT_CONFIG_PATH, "r") as f:
         return {"yaml_content": f.read()}
 
@@ -43,35 +58,22 @@ def save_config(payload: ConfigPayload):
 
 @app.get("/api/available-steps")
 def get_available_steps():
-    try:
-        from toolbox.steps.base_step import REGISTERED_STEPS
-        return {"steps": list(REGISTERED_STEPS.keys())}
-    except Exception as e:
-        # Fallback list if the toolbox isn't installed locally
-        return {"steps": [
-            "Load OG1", "Apply QC", "Interpolate Data", "Derive CTD", 
-            "Find Profiles", "Data Export"
-        ]}
+    return {"steps": []} 
 
 @app.get("/api/browse")
 def browse_file():
-    import sys
-    
     if sys.platform == "darwin":
-        # Native macOS file dialog using AppleScript
-        script = "POSIX path of (choose file)"
+        script = 'POSIX path of (choose file of type {"netcdf", "nc", "public.data"})'
         try:
             result = subprocess.check_output(["osascript", "-e", script], text=True).strip()
             return {"path": result}
         except subprocess.CalledProcessError:
-            # Triggered if the user clicks 'Cancel'
             return {"path": ""}
     else:
-        # Fallback to tkinter for Windows/Linux
         script = (
             "import tkinter as tk, tkinter.filedialog as fd; "
             "root=tk.Tk(); root.withdraw(); root.attributes('-topmost', True); "
-            "print(fd.askopenfilename())"
+            "print(fd.askopenfilename(filetypes=[('NetCDF files', '*.nc')]))"
         )
         try:
             result = subprocess.check_output(["python3", "-c", script], text=True).strip()
@@ -79,14 +81,47 @@ def browse_file():
         except Exception:
             return {"path": ""}
 
+@app.get("/api/logs")
+def get_logs():
+    """Endpoint for the frontend to poll terminal output."""
+    return {"logs": list(log_buffer)}
+
 @app.post("/api/run")
-def run_pipeline():
+async def run_pipeline():
+    global log_buffer
+    log_buffer.clear()
+    
+    # Run pipeline in a separate process so Tkinter gets its own main thread
+    # We use forward slashes for paths to ensure cross-platform compatibility in the script string
+    config_path_clean = DEFAULT_CONFIG_PATH.replace("\\", "/")
+    script = f"from toolbox.pipeline import Pipeline; Pipeline('{config_path_clean}').run()"
+    
     try:
-        from toolbox.pipeline import Pipeline
-        pipeline = Pipeline(config_path=DEFAULT_CONFIG_PATH)
-        pipeline.run()
+        # Launch the subprocess asynchronously
+        process = await asyncio.create_subprocess_exec(
+            sys.executable, "-c", script,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+
+        # Stream output directly into the log buffer while the process runs
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            # Decode and strip newline, handle weird characters safely
+            log_buffer.append(line.decode('utf-8', errors='replace').rstrip('\n'))
+
+        # Wait for the user to close any plots/windows and for the process to exit
+        await process.wait()
+
+        if process.returncode != 0:
+            raise HTTPException(status_code=500, detail="Pipeline encountered an error. Check logs.")
+            
         return {"status": "success", "message": "Pipeline executed successfully."}
+        
     except Exception as e:
+        log_buffer.append(str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/available-qc")
@@ -95,7 +130,13 @@ def get_available_qc():
         from toolbox.steps.base_test import REGISTERED_QC
         return {"tests": list(REGISTERED_QC.keys())}
     except Exception as e:
-        return {"tests": ["impossible date test", "range test", "spike test"]}
+        return {"tests": [
+            "impossible date test", "impossible location test", 
+            "position on land test", "impossible speed test", 
+            "range test", "gross range test", "stuck value test", 
+            "spike test", "valid profile test", "flag full profile", 
+            "PAR irregularity test"
+        ]}
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=HOST, port=PORT, reload=True)

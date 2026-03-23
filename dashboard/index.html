@@ -13,12 +13,12 @@
     <script src="/static/steps.js"></script>
     <style>
         :root {
-            var(--bg-colour): #f8fafc;
+            --bg-colour: #f8fafc;
             --panel-bg: #ffffff;
             --text-colour: #0f172a;
             --text-muted: #64748b;
             --border-colour: #e2e8f0;
-            --radius: 6px;
+            --radius: 16px;
             --spacing-sm: 8px;
             --spacing-md: 16px;
             --font-sans: 'Inter', system-ui, sans-serif;
@@ -34,126 +34,82 @@
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
-
-        body {
-            font-family: var(--font-sans); background-color: var(--bg-colour); 
-            color: var(--text-colour); font-size: var(--font-size); 
-            height: 100vh; width: 100vw; display: flex; flex-direction: column; overflow: hidden;
-        }
-
-        header {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: var(--spacing-sm) var(--spacing-md); background-color: var(--panel-bg);
-            border-bottom: 1px solid var(--border-colour); z-index: 10;
-        }
+        body { font-family: var(--font-sans); background-color: var(--bg-colour); color: var(--text-colour); font-size: var(--font-size); height: 100vh; width: 100vw; display: flex; flex-direction: column; overflow: hidden; }
         
+        header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background-color: var(--panel-bg); border-bottom: 1px solid var(--border-colour); z-index: 10; }
         .header-brand { display: flex; align-items: center; gap: 12px; }
-        .brand-icon {
-            width: 32px; height: 32px; background-color: var(--google-blue); color: white;
-            border-radius: var(--radius); display: flex; align-items: center; justify-content: center;
-        }
+        .brand-icon { width: 36px; height: 36px; background-color: var(--google-blue); color: white; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; }
         .brand-text h1 { font-size: 16px; font-weight: 700; color: var(--text-colour); }
-        .brand-text p { font-size: 11px; font-weight: 500; color: var(--text-muted); }
-
+        .brand-text p { font-size: 11px; font-weight: 500; color: var(--text-muted); margin-top: 2px; }
         .header-controls { display: flex; align-items: center; gap: 16px; }
-        
-        .view-toggles {
-            display: flex; background: #f1f5f9; padding: 4px;
-            border-radius: var(--radius); border: 1px solid var(--border-colour); gap: 4px;
-        }
+        .view-toggles { display: flex; background: #f1f5f9; padding: 4px; border-radius: var(--radius); border: 1px solid var(--border-colour); gap: 4px; }
 
-        button {
-            display: flex; align-items: center; justify-content: center; gap: 6px;
-            padding: 6px 12px; background-color: var(--panel-bg); border: 1px solid var(--border-colour);
-            border-radius: var(--radius); cursor: pointer; font-size: var(--font-size); 
-            font-family: var(--font-sans); color: var(--text-colour); font-weight: 600; transition: all 0.2s ease;
-        }
-        
+        button { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; background-color: var(--panel-bg); border: 1px solid var(--border-colour); border-radius: var(--radius); cursor: pointer; font-size: var(--font-size); font-family: var(--font-sans); color: var(--text-colour); font-weight: 600; transition: all 0.2s ease; }
         button:hover { background-color: #f1f5f9; }
-        button.toggle-btn { border: none; background: transparent; color: var(--text-muted); padding: 4px 10px; }
+        button.toggle-btn { border: none; background: transparent; color: var(--text-muted); padding: 6px 12px; }
         button.active-toggle { background-color: white; color: var(--google-blue); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        
         button.primary { background-color: var(--google-blue); color: white; border-color: var(--google-blue); }
         button.primary:hover { background-color: var(--google-blue-hover); }
-        button.danger { color: var(--google-red); border-color: transparent; padding: 4px; }
+        button.danger { color: var(--google-red); border-color: transparent; padding: 6px; }
         button.danger:hover { background-color: #fef2f2; }
         button:disabled { opacity: 0.7; cursor: not-allowed; }
-        .lucide { width: 16px; height: 16px; }
+        .lucide { width: 18px; height: 18px; }
 
         main { display: flex; flex: 1; overflow: hidden; position: relative; }
-        
         .panel { display: flex; flex-direction: column; height: 100%; }
-        #ui-panel { background-color: var(--panel-bg); border-right: 1px solid var(--border-colour); width: 50%; }
+        #ui-panel { background-color: var(--bg-colour); border-right: 1px solid var(--border-colour); width: 50%; }
         #code-panel { background-color: var(--code-bg); width: 50%; }
-        
         .panel-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; }
-        
-        .section-header {
-            display: flex; align-items: center; gap: 8px; padding: var(--spacing-md);
-            font-weight: 700; font-size: 14px; border-bottom: 1px solid var(--border-colour); background: #f8fafc;
-        }
-        
-        .config-block { padding: var(--spacing-md); border-bottom: 1px solid var(--border-colour); }
 
-        .step-row { border-bottom: 1px solid var(--border-colour); background-color: var(--panel-bg); transition: background 0.1s; }
-        .step-row.active-step { background-color: #f0fdf4; border-left: 3px solid var(--google-green); }
-        .step-row.dragging { opacity: 0.5; background: #f1f5f9; }
+        .step-row { border-bottom: 1px solid var(--border-colour); background: white; transition: all 0.2s ease; }
+        .step-row.active-step { border-left: 4px solid var(--google-blue); background-color: #f8fafc; }
+        .step-row.disabled-step { opacity: 0.6; filter: grayscale(20%); }
+        .step-row.disabled-step .step-body { display: none !important; }
+        .step-row.disabled-step .step-title { color: var(--text-muted); }
         
-        .step-header { display: flex; align-items: center; gap: 12px; padding: 8px var(--spacing-md); cursor: pointer; }
+        .step-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; cursor: pointer; }
+        .step-icon-wrapper { display: flex; align-items: center; gap: 16px; }
+        .step-number { width: 32px; height: 32px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 13px; }
+        .step-title { font-weight: 700; color: #1e293b; font-size: 14px; transition: color 0.2s; }
         
-        .step-number {
-            width: 24px; height: 24px; border-radius: var(--radius);
-            display: flex; align-items: center; justify-content: center;
-            color: white; font-weight: 700; font-size: 11px;
-        }
-        .step-title { font-weight: 600; flex: 1; }
-        .drag-handle { cursor: grab; color: var(--text-muted); display: flex; }
-        .drag-handle:active { cursor: grabbing; }
+        .switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .2s; border-radius: var(--radius); }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .2s; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        input:checked + .slider { background-color: var(--google-blue); }
+        input:checked + .slider:before { transform: translateX(16px); }
 
-        .step-body { padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md) 48px; display: none; }
+        .step-body { padding: 0 20px 20px 68px; display: none; }
         .step-row.active-step .step-body { display: block; }
 
         .form-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
         .form-row:last-child { margin-bottom: 0; }
-        .form-row label { width: 160px; font-weight: 600; color: var(--text-muted); flex-shrink: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .form-row label { width: 140px; font-weight: 700; color: #64748b; flex-shrink: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
         
-        input[type="text"], textarea, select {
-            flex: 1; padding: 6px 10px; border: 1px solid var(--border-colour); border-radius: var(--radius); 
-            font-size: var(--font-size); font-family: var(--font-sans); width: 100%; 
-            background-color: var(--bg-colour); outline: none; transition: border 0.2s;
-        }
+        input[type="text"], textarea, select { flex: 1; padding: 8px 12px; border: 1px solid var(--border-colour); border-radius: var(--radius); font-size: var(--font-size); font-family: var(--font-sans); width: 100%; background-color: white; outline: none; transition: border 0.2s; font-weight: 500; }
         textarea { resize: vertical; min-height: 60px; }
-        input[type="text"]:focus, textarea:focus, select:focus { border-color: var(--google-blue); background: var(--panel-bg); }
+        input[type="text"]:focus, textarea:focus, select:focus { border-color: var(--google-blue); box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.1); }
 
-        /* Themed Add Step Button */
-        .add-step-wrapper { padding: var(--spacing-md); margin-top: var(--spacing-sm); }
-        .add-step-select {
-            width: 100%; appearance: none; padding: 16px; background: transparent;
-            border: 2px dashed var(--border-colour); border-radius: 24px;
-            color: var(--text-muted); font-weight: 700; text-align: center; cursor: pointer;
-        }
-        .add-step-select:hover { border-color: var(--google-blue); color: var(--google-blue); }
-
-        .code-header {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 8px 16px; background-color: var(--code-header); border-bottom: 1px solid #334155;
-            color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-        }
-        
+        .code-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background-color: var(--code-header); border-bottom: 1px solid #334155; color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
         .CodeMirror { height: 100%; font-family: var(--font-mono); font-size: 13px; background: transparent !important; }
 
-        #status-banner {
-            position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
-            padding: 8px 16px; border-radius: var(--radius); font-weight: 600; display: none; z-index: 50;
-            align-items: center; gap: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        /* Terminal Drawer CSS */
+        .terminal-drawer {
+            position: fixed; bottom: 0; left: 0; right: 0; height: 35vh;
+            background: #0f172a; color: #10b981; font-family: var(--font-mono); font-size: 12px;
+            padding: 16px; overflow: hidden; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 100; border-top: 1px solid #334155; display: flex; flex-direction: column;
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
         }
+        .terminal-drawer.open { transform: translateY(0); }
+        .terminal-header { display: flex; justify-content: space-between; color: #cbd5e1; font-weight: 700; margin-bottom: 12px; font-family: var(--font-sans); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+        .terminal-content { flex: 1; overflow-y: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+        .btn-close-term { background: none; border: none; color: #94a3b8; cursor: pointer; padding: 4px; }
+        .btn-close-term:hover { color: white; }
+
+        #status-banner { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: var(--radius); font-weight: 600; display: none; z-index: 50; align-items: center; gap: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); font-size: 14px; }
         
-        footer {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 8px var(--spacing-md); background-color: var(--panel-bg);
-            border-top: 1px solid var(--border-colour);
-            font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;
-        }
+        footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background-color: var(--panel-bg); border-top: 1px solid var(--border-colour); font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
         
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -170,16 +126,14 @@
                 <p>Ocean Glider Pipeline Dashboard</p>
             </div>
         </div>
-
         <div class="header-controls">
+            <button id="btn-toggle-term" class="toggle-btn" title="View Logs"><i data-lucide="terminal-square"></i> Logs</button>
             <div class="view-toggles">
                 <button class="toggle-btn" data-view="ui"><i data-lucide="layout"></i> UI</button>
                 <button class="toggle-btn active-toggle" data-view="split"><i data-lucide="split-square-horizontal"></i> Split</button>
                 <button class="toggle-btn" data-view="code"><i data-lucide="code-2"></i> Code</button>
             </div>
-
             <div style="width: 1px; height: 24px; background: var(--border-colour);"></div>
-
             <button id="btn-save" title="Save (Cmd/Ctrl + S)"><i data-lucide="save"></i> Save</button>
             <button id="btn-run" class="primary"><i data-lucide="play"></i> Run Pipeline</button>
         </div>
@@ -187,37 +141,47 @@
 
     <main>
         <div id="status-banner"></div>
-
         <div class="panel" id="ui-panel">
             <div class="panel-scroll" id="steps-list"></div>
         </div>
-
         <div class="panel" id="code-panel">
             <div class="code-header">
-                <div style="display: flex; align-items: center; gap: 8px;"><i data-lucide="terminal" style="width: 14px; height: 14px;"></i> pipeline_config.yaml</div>
+                <div style="display: flex; align-items: center; gap: 8px;"><i data-lucide="terminal" style="width: 16px; height: 16px;"></i> pipeline_config.yaml</div>
             </div>
             <textarea id="yaml-editor"></textarea>
         </div>
     </main>
 
+    <div id="terminal-drawer" class="terminal-drawer">
+        <div class="terminal-header">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="terminal" style="width: 16px; height: 16px;"></i> Pipeline Output
+            </div>
+            <button id="btn-close-term" class="btn-close-term"><i data-lucide="x"></i></button>
+        </div>
+        <div id="terminal-content" class="terminal-content">Waiting for pipeline run...</div>
+    </div>
+
     <footer>
         <div style="display: flex; align-items: center; gap: 16px;">
-            <span style="display: flex; align-items: center; gap: 6px;"><div style="width: 6px; height: 6px; border-radius: var(--radius); background: var(--google-green);"></div> System Ready</span>
-            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="git-branch" style="width: 12px; height: 12px;"></i> v2.4.1-stable</span>
+            <span style="display: flex; align-items: center; gap: 6px;"><div style="width: 8px; height: 8px; border-radius: var(--radius); background: var(--google-green);"></div> System Ready</span>
+            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="git-branch" style="width: 14px; height: 14px;"></i> v2.4.1-stable</span>
         </div>
         <div>&copy; 2026 National Oceanography Centre</div>
     </footer>
 
     <script>
+        let masterConfig = null;
         let configData = { pipeline: {}, steps: [] };
-        let availableStepsList = [];
         let availableQcList = [];
         let isSyncing = false;
-        let dragSourceIndex = null;
         let activeStepIndex = null;
+        let logInterval = null;
 
         const stepsList = document.getElementById('steps-list');
         const statusBanner = document.getElementById('status-banner');
+        const termDrawer = document.getElementById('terminal-drawer');
+        const termContent = document.getElementById('terminal-content');
         
         const editor = CodeMirror.fromTextArea(document.getElementById('yaml-editor'), {
             mode: 'yaml', theme: 'material-darker', lineNumbers: true, tabSize: 2
@@ -225,13 +189,13 @@
 
         async function init() {
             try {
-                const [resConf, resSteps, resQc] = await Promise.all([
+                const [resMaster, resConf, resQc] = await Promise.all([
+                    fetch('/api/default-config'),
                     fetch('/api/config'),
-                    fetch('/api/available-steps'),
                     fetch('/api/available-qc')
                 ]);
                 
-                availableStepsList = (await resSteps.json()).steps.sort();
+                masterConfig = jsyaml.load((await resMaster.json()).yaml_content);
                 availableQcList = (await resQc.json()).tests.sort();
                 
                 const data = await resConf.json();
@@ -239,7 +203,7 @@
                 editor.setValue(data.yaml_content);
                 isSyncing = false;
                 
-                parseAndRenderUI();
+                updateUIFromYaml();
             } catch (err) {
                 showStatus('Error loading initial data', 'error');
             }
@@ -259,107 +223,81 @@
         function setNested(obj, path, value) {
             const keys = path.split('.'); let current = obj;
             for (let i = 0; i < keys.length - 1; i++) {
-                if (!current[keys[i]]) current[keys[i]] = {};
+                if (!current[keys[i]]) current[current[keys[i]]] = {};
                 current = current[keys[i]];
             }
             current[keys[keys.length - 1]] = value;
         }
 
-        function parseAndRenderUI() {
-                    try { configData = jsyaml.load(editor.getValue()); } catch (e) { return; }
-                    if (!configData) configData = { pipeline: {}, steps: [] };
-                    if (!configData.pipeline) configData.pipeline = {};
-                    if (!configData.steps) configData.steps = [];
+        function updateUIFromYaml() {
+            try {
+                const parsed = jsyaml.load(editor.getValue());
+                if (!parsed) return;
 
-                    // Generate HTML from steps.js
-                    stepsList.innerHTML = generateStepsHTML(configData, activeStepIndex, availableStepsList, availableQcList);
-                    lucide.createIcons();
-                    
-                    // Attach listeners using the logic isolated in steps.js
-                    attachStepListeners({
-                        stepsList,
-                        configData,
-                        syncYaml,
-                        parseAndRenderUI,
-                        getNested,
-                        setNested,
-                        highlightYamlStep,
-                        setActiveStepIndex: (idx) => { activeStepIndex = idx; }
-                    });
-                }
+                configData.pipeline = parsed.pipeline || masterConfig.pipeline;
+                const parsedSteps = parsed.steps || [];
 
-        function attachListeners() {
-            stepsList.querySelectorAll('input[type="text"], textarea').forEach(el => {
-                el.addEventListener('change', e => {
-                    let val = e.target.value;
-                    if (val === 'true') val = true; else if (val === 'false') val = false; else if (!isNaN(val) && val !== '') val = Number(val);
-                    setNested(configData, e.target.dataset.path, val); syncYaml();
+                configData.steps = masterConfig.steps.map(masterStep => {
+                    const userStep = parsedSteps.find(s => s.name === masterStep.name);
+                    if (userStep) {
+                        return { ...userStep, enabled: true };
+                    } else {
+                        return { ...masterStep, enabled: false };
+                    }
                 });
-            });
 
-            stepsList.querySelectorAll('input[type="checkbox"]').forEach(el => {
-                el.addEventListener('change', e => { setNested(configData, e.target.dataset.path, e.target.checked); syncYaml(); });
-            });
-
-            stepsList.querySelectorAll('.step-header').forEach(el => {
-                el.addEventListener('click', e => {
-                    if (['INPUT','BUTTON','SELECT','I'].includes(e.target.tagName)) return;
-                    activeStepIndex = parseInt(el.parentElement.dataset.index);
-                    parseAndRenderUI();
-                    highlightYamlStep(activeStepIndex);
-                });
-            });
-
-            stepsList.querySelectorAll('.step-row[draggable="true"]').forEach(row => {
-                row.addEventListener('dragstart', () => { dragSourceIndex = parseInt(row.dataset.index); row.classList.add('dragging'); });
-                row.addEventListener('dragend', () => row.classList.remove('dragging'));
-                row.addEventListener('dragover', e => e.preventDefault());
-                row.addEventListener('drop', e => {
-                    e.preventDefault();
-                    const targetIdx = parseInt(row.dataset.index);
-                    if (uiConfig.fixedSteps.includes(configData.steps[targetIdx].name)) return;
-                    const item = configData.steps.splice(dragSourceIndex, 1)[0];
-                    configData.steps.splice(targetIdx, 0, item);
-                    syncYaml(); parseAndRenderUI();
-                });
-            });
-
-            stepsList.querySelectorAll('.btn-del-step').forEach(btn => btn.addEventListener('click', e => { configData.steps.splice(btn.dataset.index, 1); syncYaml(); parseAndRenderUI(); }));
-            stepsList.querySelectorAll('.btn-del-param').forEach(btn => btn.addEventListener('click', e => { const keys = btn.dataset.path.split('.'); const last = keys.pop(); const obj = getNested(configData, keys.join('.')); delete obj[last]; syncYaml(); parseAndRenderUI(); }));
-            
-            stepsList.querySelectorAll('.sel-add-qc').forEach(sel => sel.addEventListener('change', e => { if (e.target.value) { setNested(configData, `${e.target.dataset.path}.${e.target.value}`, {}); syncYaml(); parseAndRenderUI(); } }));
-            
-            stepsList.querySelectorAll('.btn-add-param').forEach(btn => {
-                btn.addEventListener('click', e => {
-                    const key = e.target.parentElement.querySelector('.new-key-input').value.trim();
-                    if (!key) return;
-                    let obj = getNested(configData, btn.dataset.path) || {};
-                    obj[key] = ""; setNested(configData, btn.dataset.path, obj); syncYaml(); parseAndRenderUI();
-                });
-            });
-
-            const newStepSel = document.getElementById('select-new-step');
-            if (newStepSel) {
-                newStepSel.addEventListener('change', e => {
-                    if (!e.target.value) return;
-                    configData.steps.push({ name: e.target.value, parameters: e.target.value === 'Apply QC' ? { qc_settings: {} } : {}, diagnostics: false });
-                    syncYaml(); parseAndRenderUI();
-                });
+                parseAndRenderUI();
+            } catch (e) {
+                console.warn("YAML parsing issue while typing.");
             }
         }
 
+        function parseAndRenderUI() {
+            stepsList.innerHTML = generateStepsHTML(configData, activeStepIndex, availableQcList);
+            lucide.createIcons();
+            attachStepListeners({
+                stepsList, configData, syncYaml, parseAndRenderUI, 
+                getNested, setNested, highlightYamlStep, 
+                setActiveStepIndex: (idx) => { activeStepIndex = idx; }
+            });
+        }
+
+        function syncYaml() {
+            if (isSyncing) return;
+            isSyncing = true;
+            
+            const exportConfig = {
+                pipeline: configData.pipeline,
+                steps: configData.steps
+                    .filter(s => s.enabled)
+                    .map(s => {
+                        const { enabled, ...rest } = s; 
+                        return rest;
+                    })
+            };
+            
+            editor.setValue(jsyaml.dump(exportConfig, { indent: 2, noRefs: true }));
+            isSyncing = false;
+        }
+
         function highlightYamlStep(stepIndex) {
+            let enabledIndex = -1;
+            for (let i = 0; i <= stepIndex; i++) {
+                if (configData.steps[i].enabled) enabledIndex++;
+            }
+            
+            if (enabledIndex === -1) return;
+
             const lines = editor.getValue().split('\n'); 
             let count = -1;
             let startLine = -1;
             let endLine = -1;
 
-            // Find the start and end line of the selected step block
             for (let i = 0; i < lines.length; i++) {
                 if (lines[i].trim().startsWith('- name:')) {
                     count++;
-                    if (count === stepIndex) startLine = i;
-                    else if (count === stepIndex + 1) { endLine = i - 1; break; }
+                    if (count === enabledIndex) startLine = i;
+                    else if (count === enabledIndex + 1) { endLine = i - 1; break; }
                 }
             }
             
@@ -372,18 +310,32 @@
 
         editor.on('cursorActivity', () => {
             if (isSyncing) return;
-            const lines = editor.getValue().split('\n'); let count = -1;
-            for (let i = 0; i <= editor.getCursor().line; i++) { if (lines[i].trim().startsWith('- name:')) count++; }
-            if (count !== -1 && count !== activeStepIndex) { activeStepIndex = count; parseAndRenderUI(); }
+            const lines = editor.getValue().split('\n'); let enabledCount = -1;
+            for (let i = 0; i <= editor.getCursor().line; i++) { if (lines[i].trim().startsWith('- name:')) enabledCount++; }
+            
+            if (enabledCount !== -1) {
+                let actualIdx = -1;
+                let activeMatch = -1;
+                for (let i = 0; i < configData.steps.length; i++) {
+                    if (configData.steps[i].enabled) activeMatch++;
+                    if (activeMatch === enabledCount) {
+                        actualIdx = i;
+                        break;
+                    }
+                }
+                if (actualIdx !== -1 && actualIdx !== activeStepIndex) { 
+                    activeStepIndex = actualIdx; 
+                    parseAndRenderUI(); 
+                }
+            }
         });
 
-        function syncYaml() { isSyncing = true; editor.setValue(jsyaml.dump(configData, { indent: 2, noRefs: true })); isSyncing = false; }
-        editor.on('change', () => { if (!isSyncing) parseAndRenderUI(); });
+        editor.on('change', () => { if (!isSyncing) updateUIFromYaml(); });
 
-        // Toggling display state directly without transitions prevents squishing
         document.querySelectorAll('.toggle-btn').forEach(btn => {
             btn.addEventListener('click', e => {
-                document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active-toggle'));
+                if (e.target.closest('#btn-toggle-term')) return; // Ignore terminal toggle
+                document.querySelectorAll('.view-toggles .toggle-btn').forEach(b => b.classList.remove('active-toggle'));
                 const target = e.target.closest('.toggle-btn');
                 target.classList.add('active-toggle');
                 
@@ -398,6 +350,52 @@
                 setTimeout(() => editor.refresh(), 50);
             });
         });
+
+        // --- Terminal Logic ---
+        document.getElementById('btn-toggle-term').addEventListener('click', () => {
+            termDrawer.classList.toggle('open');
+            if (termDrawer.classList.contains('open')) fetchLogs();
+        });
+
+        document.getElementById('btn-close-term').addEventListener('click', () => {
+            termDrawer.classList.remove('open');
+        });
+
+        function startLogPolling() {
+            termDrawer.classList.add('open');
+            termContent.innerHTML = "<span style='color:#64748b'>Starting pipeline execution...</span>\n";
+            if (logInterval) clearInterval(logInterval);
+            logInterval = setInterval(fetchLogs, 1000);
+        }
+
+        function stopLogPolling() {
+            if (logInterval) clearInterval(logInterval);
+            fetchLogs(); // Final pull
+        }
+
+        async function fetchLogs() {
+            try {
+                const res = await fetch('/api/logs');
+                const data = await res.json();
+                if (data.logs.length > 0) {
+                    const formatted = data.logs.map(line => {
+                        const safeLine = line.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                        if (safeLine.includes("ERROR") || safeLine.includes("Traceback") || safeLine.includes("Exception")) {
+                            return `<span style="color: #ef4444;">${safeLine}</span>`;
+                        }
+                        if (safeLine.includes("WARNING")) {
+                            return `<span style="color: #f59e0b;">${safeLine}</span>`;
+                        }
+                        return safeLine;
+                    }).join('\n');
+                    
+                    const isScrolledToBottom = termContent.scrollHeight - termContent.clientHeight <= termContent.scrollTop + 10;
+                    termContent.innerHTML = formatted;
+                    if (isScrolledToBottom) termContent.scrollTop = termContent.scrollHeight;
+                }
+            } catch (e) {}
+        }
+        // ----------------------
 
         document.addEventListener('keydown', e => {
             if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); document.getElementById('btn-save').click(); }
@@ -415,16 +413,28 @@
         document.getElementById('btn-run').addEventListener('click', async () => {
             document.getElementById('btn-save').click();
             const btn = document.getElementById('btn-run');
-            btn.innerHTML = `<i data-lucide="loader-2" class="lucide-spin"></i> Running...`; lucide.createIcons(); btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader-2" class="lucide-spin"></i> Running...`; 
+            lucide.createIcons(); 
+            btn.disabled = true;
+
+            startLogPolling();
+
             try {
                 const res = await fetch('/api/run', { method: 'POST' });
-                showStatus((await res.json()).message);
-            } catch (e) { showStatus('Pipeline run failed', 'error'); }
-            finally { btn.innerHTML = `<i data-lucide="play"></i> Run Pipeline`; lucide.createIcons(); btn.disabled = false; }
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Pipeline run failed');
+                showStatus(data.message);
+            } catch (e) { 
+                showStatus('Pipeline run failed. Check logs.', 'error'); 
+            } finally { 
+                stopLogPolling();
+                btn.innerHTML = `<i data-lucide="play"></i> Run Pipeline`; 
+                lucide.createIcons(); 
+                btn.disabled = false; 
+            }
         });
 
         init();
-        lucide.createIcons();
     </script>
 </body>
 </html>

@@ -1,58 +1,26 @@
 pipeline:
-  name: Example CTD Processing Pipeline
-  description: A pipeline for processing CTD data
-  visualisation: false
+  name: Modern Glider Pipeline
+  description: Full processing pipeline from Load to Export
+  visualisation: true
 steps:
   - name: Load OG1
     parameters:
-      file_path: ../examples/data/OG1/Nelson_646_R.nc
+      file_path: /Users/orlpru/Desktop/OG1_Data/Nelson_646_R.nc
     diagnostics: false
-  - name: Apply QC
+  - name: Find Profiles Beta
     parameters:
-      qc_settings:
-        impossible date test: {}
-        impossible location test: {}
-        position on land test: {}
-        impossible speed test: {}
-    diagnostics: true
-  - name: Interpolate Data
-    parameters:
-      qc_handling_settings:
-        flag_filter_settings:
-          PRES:
-            - 3
-            - 4
-            - 9
-          LATITUDE:
-            - 3
-            - 4
-            - 9
-          LONGITUDE:
-            - 3
-            - 4
-            - 9
-        reconstruction_behaviour: replace
-        flag_mapping:
-          '3': 8
-          '4': 8
-          '9': 8
-    diagnostics: true
-  - name: Derive CTD
-    parameters:
-      to_derive:
-        - DEPTH
-    diagnostics: false
-  - name: Find Profiles
-    parameters:
+      depth_column: PRES
+      resample_cadence: 30s
       gradient_thresholds:
         - 0.033
         - -0.033
+      horiz_gradient_threshold: 0.01
       filter_window_sizes:
-        - 20s
-        - 20s
-      depth_column: DEPTH
+        - 1
+        - 2
+      edge_squeeze: 0
+      dive_scale: 15
+      max_depth_gap: 60
+      min_horizontal_duration: 20min
+      min_horizontal_depth: 1
     diagnostics: true
-  - name: Data Export
-    parameters:
-      export_format: netcdf
-      output_path: ../examples/data/OG1/Nelson_646_R_Processed.nc

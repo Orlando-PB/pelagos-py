@@ -1,0 +1,111 @@
+pipeline:
+  name: Modern Glider Pipeline
+  description: 'Full processing pipeline from Load to Export'
+  visualisation: false
+steps:
+  - name: Load OG1
+    parameters:
+      file_path: ''
+    diagnostics: false
+  - name: Apply QC
+    parameters:
+      qc_settings:
+        impossible date test: {}
+        impossible location test: {}
+        position on land test: {}
+        impossible speed test: {}
+        range test:
+          variable_ranges:
+            PRES:
+              3: [-5, -2.4]
+              4: [-.inf, -5]
+          also_flag:
+            PRES: [CNDC, TEMP]
+          plot: [PRES]
+        gross range test:
+          variable_ranges:
+            TEMP:
+              3: [0, 30]
+              4: [-2.5, 40]
+          also_flag:
+            TEMP: [DOXY]
+        stuck value test:
+          variables:
+            PRES: 2
+          also_flag:
+            PRES: [CNDC, TEMP]
+          plot: [PRES]
+        PAR irregularity test:
+          noise_equivalent_estimate: 0.03
+          plot_profiles: [100, 200]
+    diagnostics: false
+  - name: Interpolate Data
+    parameters:
+      qc_handling_settings:
+        flag_filter_settings:
+          PRES: [3, 4, 9]
+          LATITUDE: [3, 4, 9]
+          LONGITUDE: [3, 4, 9]
+        reconstruction_behaviour: replace
+        flag_mapping:
+          3: 8
+          4: 8
+          9: 8
+    diagnostics: false
+  - name: Find Profiles Beta
+    parameters:
+      depth_column: PRES
+      resample_cadence: 30s
+      gradient_thresholds: [0.033, -0.033]
+      horiz_gradient_threshold: 0.01
+      filter_window_sizes: [1, 2]
+      edge_squeeze: 0
+      dive_scale: 15.0
+      max_depth_gap: 60.0
+      min_horizontal_duration: 20min
+      min_horizontal_depth: 1.0
+    diagnostics: true
+  - name: Salinity Adjustment
+    parameters:
+      qc_handling_settings:
+        flag_filter_settings:
+          CNDC: [3, 4, 9]
+          TEMP: [3, 4, 9]
+          PROFILE_NUMBER: [3, 4, 9]
+        reconstruction_behaviour: reinsert
+        flag_mapping:
+          0: 5
+          1: 5
+          2: 5
+      filter_window_size: 21
+      plot_profiles_in_range: [100, 150]
+    diagnostics: true
+  - name: Chla Deep Correction
+    parameters: {}
+    diagnostics: false
+  - name: Chla Quenching Correction
+    parameters: {}
+    diagnostics: false
+  - name: BBP from Beta
+    parameters: {}
+    diagnostics: false
+  - name: Isolate BBP Spikes
+    parameters: {}
+    diagnostics: false
+  - name: Derive Oxygen
+    parameters: {}
+    diagnostics: false
+  - name: Derive CTD
+    parameters:
+      to_derive:
+        - DEPTH
+        - PRAC_SALINITY
+        - ABS_SALINITY
+        - CONS_TEMP
+        - DENSITY
+    diagnostics: false
+  - name: Data Export
+    parameters:
+      export_format: netcdf
+      output_path: ''
+    diagnostics: false
