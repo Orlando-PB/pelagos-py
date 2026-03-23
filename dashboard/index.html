@@ -137,6 +137,7 @@
                 <button class="toggle-btn" data-view="code"><i data-lucide="code-2"></i> Code</button>
             </div>
             <div style="width: 1px; height: 24px; background: var(--border-colour);"></div>
+            <button id="btn-reset" class="danger" title="Reset Configuration"><i data-lucide="rotate-ccw"></i> Reset</button>
             <button id="btn-save" title="Save (Cmd/Ctrl + S)"><i data-lucide="save"></i> Save</button>
             <button id="btn-cancel" class="danger" style="display: none;" title="Cancel Pipeline (Esc)"><i data-lucide="square"></i> Cancel</button>
             <button id="btn-run" class="primary"><i data-lucide="play"></i> Run Pipeline</button>
@@ -213,6 +214,17 @@
         const editor = CodeMirror.fromTextArea(document.getElementById('yaml-editor'), {
             mode: 'yaml', theme: 'material-darker', lineNumbers: true, tabSize: 2
         });
+
+        // Makes the function available to plot_view.js to update the YAML
+        window.updateStepParameters = function(stepName, newParams) {
+            const step = configData.steps.find(s => s.name === stepName);
+            if (step) {
+                step.parameters = { ...step.parameters, ...newParams };
+                syncYaml();
+                parseAndRenderUI();
+                document.getElementById('btn-save').click();
+            }
+        };
 
         async function init() {
             try {
@@ -448,6 +460,22 @@
                 await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml_content: editor.getValue() }) });
                 showStatus('Configuration saved');
             } catch (e) { showStatus('Failed to save', 'error'); }
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', async () => {
+            if (confirm('Are you sure you want to reset the pipeline to default settings?')) {
+                try {
+                    const res = await fetch('/api/reset', { method: 'POST' });
+                    const data = await res.json();
+                    isSyncing = true;
+                    editor.setValue(data.yaml_content);
+                    isSyncing = false;
+                    updateUIFromYaml();
+                    showStatus('Configuration reset to defaults');
+                } catch (e) {
+                    showStatus('Failed to reset configuration', 'error');
+                }
+            }
         });
 
         document.getElementById('btn-cancel').addEventListener('click', async () => {

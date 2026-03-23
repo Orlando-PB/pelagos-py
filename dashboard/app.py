@@ -13,7 +13,12 @@ from pydantic import BaseModel
 HOST = "127.0.0.1"
 PORT = 8000
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_CONFIG_PATH = os.path.join(BASE_DIR, "pipeline_config.yaml")
+
+# Reroute data folder to the standard user data directory
+DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
+
+DEFAULT_CONFIG_PATH = os.path.join(DATA_DIR, "pipeline_config.yaml")
 TEMPLATE_CONFIG_PATH = os.path.join(BASE_DIR, "default_pipeline.yaml")
 INDEX_HTML_PATH = os.path.join(BASE_DIR, "index.html")
 
@@ -21,7 +26,7 @@ PIPELINE_ORDER = [
     "Load OG1",
     "Find Profiles Beta",
     "Interpolate Data",
-    "Export"
+    "Data Export"
 ]
 
 app = FastAPI(title="Autonomy Toolbox Dashboard")
@@ -63,6 +68,15 @@ def save_config(payload: ConfigPayload):
     with open(DEFAULT_CONFIG_PATH, "w") as f:
         f.write(payload.yaml_content)
     return {"status": "success"}
+
+@app.post("/api/reset")
+def reset_config():
+    if os.path.exists(DEFAULT_CONFIG_PATH):
+        os.remove(DEFAULT_CONFIG_PATH)
+    default_content = get_default_config()["yaml_content"]
+    with open(DEFAULT_CONFIG_PATH, "w") as f:
+        f.write(default_content)
+    return {"status": "success", "yaml_content": default_content}
 
 @app.get("/api/available-steps")
 def get_available_steps():
@@ -108,7 +122,6 @@ def get_config():
             
     with open(DEFAULT_CONFIG_PATH, "r") as f:
         return {"yaml_content": f.read()}
-
 @app.get("/api/validate")
 def validate_config():
     if not os.path.exists(DEFAULT_CONFIG_PATH):
@@ -123,8 +136,11 @@ def validate_config():
     def check_files(obj):
         if isinstance(obj, dict):
             for k, v in obj.items():
-                if ('path' in k.lower() or 'file' in k.lower()) and isinstance(v, str) and v.endswith('.nc'):
-                    if not os.path.exists(v):
+                # If the parameter name implies it's a file or path
+                if 'path' in k.lower() or 'file' in k.lower():
+                    if not v: # Catch empty strings or None
+                        raise ValueError(f"Missing required path for '{k}'. Please select a file.")
+                    elif isinstance(v, str) and not os.path.exists(v):
                         raise ValueError(f"Required file not found on system: {v}")
                 check_files(v)
         elif isinstance(obj, list):
@@ -139,7 +155,6 @@ def validate_config():
         return {"status": "error", "message": str(e)}
 
     return {"status": "success"}
-
 @app.get("/api/browse")
 def browse_file():
     if sys.platform == "darwin":
@@ -175,6 +190,7 @@ def cancel_pipeline():
             pass
     diagnostic_state["user_action"] = "cancel"
     return {"status": "success"}
+
 @app.post("/api/run")
 async def run_pipeline():
     global log_buffer, diagnostic_state, active_process
@@ -188,11 +204,8 @@ async def run_pipeline():
         env = os.environ.copy()
         env["AUTONOMY_WEB_MODE"] = "1"
         
-        # --- THE FIX ---
-        # Force the background process to look in your local src folder first
         src_path = os.path.abspath(os.path.join(BASE_DIR, "..", "src"))
         env["PYTHONPATH"] = f"{src_path}{os.pathsep}{env.get('PYTHONPATH', '')}"
-        # ---------------
                 
         active_process = await asyncio.create_subprocess_exec(
             sys.executable, "-c", script,
@@ -219,6 +232,7 @@ async def run_pipeline():
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         active_process = None
+
 @app.get("/api/available-qc")
 def get_available_qc():
     try:

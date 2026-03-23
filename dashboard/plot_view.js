@@ -26,11 +26,19 @@ export function setupPlotView() {
         btn.innerHTML = `<i data-lucide="loader-2" class="lucide-spin"></i> Continuing...`;
         lucide.createIcons();
 
+        const params = getDiagParams();
+        const stepName = document.getElementById('diag-step-name').textContent;
+
         await fetch('/api/diagnostic/action', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'continue', parameters: getDiagParams() })
+            body: JSON.stringify({ action: 'continue', parameters: params })
         });
+
+        // Trigger the YAML update in the main window
+        if (window.updateStepParameters) {
+            window.updateStepParameters(stepName, params);
+        }
     });
 
     document.getElementById('btn-diag-cancel').addEventListener('click', async () => {
