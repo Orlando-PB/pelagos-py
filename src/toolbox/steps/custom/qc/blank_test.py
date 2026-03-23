@@ -36,6 +36,7 @@ class impossible_date_test(BaseTest):
     test_name = ""
     expected_parameters = {}
     required_variables = []
+    provided_variables = []
     qc_outputs = []
 
     def return_qc(self):

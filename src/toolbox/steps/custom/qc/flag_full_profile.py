@@ -49,6 +49,9 @@ class flag_full_profile(BaseTest):
     """
 
     test_name = "flag full profile"
+    required_variables = ["PROFILE_NUMBER"]
+    provided_variables = []
+
 
     # Specify if test target variable is user-defined (if True, __init__ has to be redefined)
     dynamic = True

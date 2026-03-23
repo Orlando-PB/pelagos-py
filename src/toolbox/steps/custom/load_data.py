@@ -26,6 +26,8 @@ MIN_YEAR_FILTER = "1990-01-01"
 @register_step
 class LoadOG1(BaseStep):
     step_name = "Load OG1"
+    required_variables = []
+    provided_variables = ["TIME", "LATITUDE", "LONGITUDE", "PRES", "TEMP", "CNDC"]
 
     # Schema defines the inputs and defaults for the web UI
     parameter_schema = {
