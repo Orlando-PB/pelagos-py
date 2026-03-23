@@ -145,9 +145,14 @@ class ApplyQC(BaseStep):
         self.flag_store.update(masks)
 
         for qc_test_name, qc_test_params in self.qc_settings.items():
-            self.log(f"Applying: {qc_test_name}") 
-            qc_test_instance = QC_CLASSES[qc_test_name](data, **qc_test_params)
-            returned_flags = qc_test_instance.return_qc()  
+            self.log(f"Applying: {qc_test_name}")
+            
+            # Extract diagnostics flag and filter it from the params passed to the test class
+            show_diag = self.diagnostics or qc_test_params.get("diagnostics", False)
+            params_to_pass = {k: v for k, v in qc_test_params.items() if k != "diagnostics"}
+            
+            qc_test_instance = QC_CLASSES[qc_test_name](data, **params_to_pass)
+            returned_flags = qc_test_instance.return_qc()
             self.organise_flags(returned_flags)
 
             for flagged_var in returned_flags.data_vars:
@@ -175,7 +180,8 @@ class ApplyQC(BaseStep):
                 attrs[f"{attr_test}_stats"] = json.dumps(var_flags.to_series().describe().round(5).to_dict())
                 attrs[f"{attr_test}_params"] = json.dumps(qc_test_params)
 
-            if self.diagnostics and not self.is_web_mode():
+            if show_diag:
+                self.log(f"Triggering diagnostic plot for {qc_test_name}")
                 qc_test_instance.plot_diagnostics()
 
             del qc_test_instance

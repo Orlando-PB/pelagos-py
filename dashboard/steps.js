@@ -14,24 +14,63 @@ const uiConfig = {
 
 function renderParams(params, basePath, availableQcList) {
     let html = '';
-    for (const [key, val] of Object.entries(params || {})) {
+    // Ensure params is an object to avoid crashes
+    const entries = Object.entries(params || {});
+    
+    for (const [key, val] of entries) {
         const path = `${basePath}.${key}`;
         
-        if (key === 'qc_settings' && typeof val === 'object') {
-            html += `<div class="form-row" style="align-items:flex-start;"><label>QC Settings</label><div style="flex:1; border-left:2px solid var(--border-colour); padding-left:16px;">`;
-            for (const [qcTest, qcParams] of Object.entries(val || {})) {
-                html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-weight:700; color:#1e293b; font-size:12px;">${qcTest} <button class="danger btn-del-param" data-path="${path}.${qcTest}"><i data-lucide="x"></i></button></div>`;
-                html += `<div style="margin-bottom:16px;">${renderParams(qcParams, `${path}.${qcTest}`, availableQcList)}</div>`;
+        if (key === 'qc_settings' && typeof val === 'object' && val !== null) {
+            html += `
+            <div class="form-row" style="align-items:flex-start;">
+                <label>QC Settings</label>
+                <div style="flex:1; border-left:2px solid var(--border-colour); padding-left:16px; min-height: 20px;">`;
+            
+            for (const [qcTest, qcParams] of Object.entries(val)) {
+                // Ensure qcParams is at least an empty object for destructuring
+                const safeQcParams = qcParams || {};
+                const isDiag = safeQcParams.diagnostics === true;
+                
+                html += `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; background:#f1f5f9; padding:6px 10px; border-radius:8px;">
+                    <span style="font-weight:700; color:#1e293b; font-size:11px;">${qcTest}</span>
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:9px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Diag</span>
+                            <label class="switch" style="transform: scale(0.75);">
+                                <input type="checkbox" class="qc-diag-toggle" data-path="${path}.${qcTest}.diagnostics" ${isDiag ? 'checked' : ''}>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <button class="danger btn-del-param" data-path="${path}.${qcTest}" style="padding:4px;"><i data-lucide="x" style="width:14px; height:14px;"></i></button>
+                    </div>
+                </div>`;
+                
+                // Remove diagnostics from the nested parameter render so it doesn't show as a text box
+                const { diagnostics, ...pureParams } = safeQcParams;
+                const nestedHtml = renderParams(pureParams, `${path}.${qcTest}`, availableQcList);
+                if (nestedHtml) {
+                    html += `<div style="margin-bottom:16px; padding-left:8px;">${nestedHtml}</div>`;
+                }
             }
-            html += `<div style="display:flex; gap:8px;"><select class="sel-add-qc" data-path="${path}"><option value="">Add Test...</option>${availableQcList.map(t=>`<option value="${t}">${t}</option>`).join('')}</select></div>`;
-            html += `</div></div>`;
+            
+            html += `
+                    <div style="display:flex; gap:8px; margin-top: 8px;">
+                        <select class="sel-add-qc" data-path="${path}" style="font-size: 11px; padding: 4px 8px;">
+                            <option value="">+ Add QC Test...</option>
+                            ${availableQcList.map(t => `<option value="${t}">${t}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+            </div>`;
         } else if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
             html += `<div class="form-row" style="align-items:flex-start;"><label>${key}</label><div style="flex:1; border-left:2px solid var(--border-colour); padding-left:16px;">${renderParams(val, path, availableQcList)}</div></div>`;
         } else {
-            const display = Array.isArray(val) ? val.join(', ') : val;
+            const display = Array.isArray(val) ? val.join(', ') : (val === null ? '' : val);
             const isPath = key.toLowerCase().includes('path') || key.toLowerCase().includes('file');
             
-            html += `<div class="form-row">
+            html += `
+            <div class="form-row">
                 <label>${key}</label>
                 <input type="text" data-path="${path}" value='${display}'>
                 ${isPath ? `<button class="btn-browse" data-path="${path}" style="padding: 10px; flex-shrink: 0;"><i data-lucide="folder-search"></i> Browse</button>` : ''}
@@ -183,4 +222,11 @@ function attachStepListeners(context) {
     stepsList.querySelectorAll('.sel-add-qc').forEach(sel => sel.addEventListener('change', e => { 
         if (e.target.value) { setNested(configData, `${e.target.dataset.path}.${e.target.value}`, {}); syncYaml(); parseAndRenderUI(); } 
     }));
+
+    stepsList.querySelectorAll('.qc-diag-toggle').forEach(el => {
+        el.addEventListener('change', e => {
+            setNested(configData, e.target.dataset.path, e.target.checked);
+            syncYaml();
+        });
+    });
 }

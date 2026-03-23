@@ -261,9 +261,13 @@
 
         function getNested(obj, path) { return path.split('.').reduce((acc, part) => acc && acc[part], obj); }
         function setNested(obj, path, value) {
-            const keys = path.split('.'); let current = obj;
+            const keys = path.split('.');
+            let current = obj;
             for (let i = 0; i < keys.length - 1; i++) {
-                if (!current[keys[i]]) current[current[keys[i]]] = {};
+                // Fix: Properly initialize the object if it doesn't exist
+                if (!current[keys[i]] || typeof current[keys[i]] !== 'object') {
+                    current[keys[i]] = {};
+                }
                 current = current[keys[i]];
             }
             current[keys[keys.length - 1]] = value;
