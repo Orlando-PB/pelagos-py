@@ -191,9 +191,9 @@
     <footer>
         <div style="display: flex; align-items: center; gap: 16px;">
             <span style="display: flex; align-items: center; gap: 6px;"><div style="width: 8px; height: 8px; border-radius: var(--radius); background: var(--google-green);"></div> System Ready</span>
-            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="git-branch" style="width: 14px; height: 14px;"></i> v2.4.1-stable</span>
+            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="git-branch" style="width: 14px; height: 14px;"></i> v0.0.1</span>
         </div>
-        <div>&copy; 2026 National Oceanography Centre</div>
+        <div>&copy; 2025 National Oceanography Centre</div>
     </footer>
 
     <script type="module">
@@ -362,6 +362,28 @@
                 }
             }
         });
+
+        function handleAutoOutputPath(inputPath) {
+            if (!inputPath || typeof inputPath !== 'string') return;
+
+            // 1. Generate the new name
+            const extension = inputPath.split('.').pop();
+            const basePath = inputPath.substring(0, inputPath.lastIndexOf('.'));
+            const processedPath = `${basePath}_processed.${extension}`;
+
+            // 2. Find the Data Export step in our master data
+            const exportStep = configData.steps.find(s => s.name === "Data Export");
+            
+            if (exportStep) {
+                // Update the parameter (assumes key is 'output_path')
+                exportStep.parameters.output_path = processedPath;
+                
+                // 3. Sync and Refresh UI
+                syncYaml();
+                parseAndRenderUI();
+                showStatus('Output path updated automatically', 'info');
+            }
+        }
 
         editor.on('change', () => { if (!isSyncing) updateUIFromYaml(); });
 

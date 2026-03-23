@@ -25,6 +25,7 @@ INDEX_HTML_PATH = os.path.join(BASE_DIR, "index.html")
 PIPELINE_ORDER = [
     "Load OG1",
     "Apply QC",
+    "Derive CTD",
     "Find Profiles Beta",
     "Interpolate Data",
     "Data Export"

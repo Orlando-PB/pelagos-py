@@ -17,58 +17,57 @@
 #### Mandatory imports ####
 from toolbox.steps.base_step import BaseStep, register_step
 from toolbox.utils.qc_handling import QCHandlingMixin
-import toolbox.utils.diagnostics as diag
 
 #### Custom imports ####
 import polars as pl
 import numpy as np
 import gsw
+import matplotlib.pyplot as plt
+import matplotlib
 
+# Plotting Configuration for easy tweaking
+PLOT_DPI = 150
+MAX_POINTS = 100000
+PLOT_COLOUR = "tab:blue"
 
 @register_step
 class DeriveCTDVariables(BaseStep, QCHandlingMixin):
     """
     A processing step class for deriving oceanographic variables from CTD data.
-
-    This class processes Conductivity, Temperature, and Depth (CTD) data to derive
-    additional oceanographic variables such as salinity, density, and depth using
-    the Gibbs SeaWater (GSW) Oceanographic Toolbox functions.
-
-    Inherits from BaseStep and processes data stored in the context dictionary.
-
-    Attributes:
-        step_name (str): Identifier for this processing step ("Derive CTD")
     """
 
     step_name = "Derive CTD"
     required_variables = ["TIME", "LATITUDE", "LONGITUDE", "CNDC", "PRES", "TEMP"]
     provided_variables = ["DEPTH", "PRAC_SALINITY", "ABS_SALINITY", "CONS_TEMP", "DENSITY"]
 
+    parameter_schema = {
+        "to_derive": {
+            "type": list,
+            "default": ["DEPTH", "PRAC_SALINITY", "ABS_SALINITY", "CONS_TEMP", "DENSITY"],
+            "description": "List of oceanographic variables to calculate."
+        },
+        "qc_handling_settings": {
+            "type": dict,
+            "default": {
+                "flag_filter_settings": {
+                    "PRES": [3, 4, 9],
+                    "TEMP": [3, 4, 9],
+                    "CNDC": [3, 4, 9]
+                },
+                "reconstruction_behaviour": "replace",
+                "flag_mapping": {3: 8, 4: 8, 9: 8}
+            },
+            "description": "Rules for handling existing QC flags during calculation."
+        }
+    }
+
     def run(self):
-        """
-        Execute the CTD variable derivation process. The following variables are
-        required: ["TIME", "LATITUDE", "LONGITUDE", "CNDC", "PRES", "TEMP"]
-
-        This method performs the following operations:
-        1. Validates that data exists in the context
-        2. Applies unit conversions to raw measurements
-        3. Optionally interpolates missing position data
-        4. Derives oceanographic variables using GSW functions
-        5. Adds metadata to derived variables
-        6. Updates the context with processed data
-
-        Returns:
-            dict: Updated context dictionary containing original and derived variables
-
-        Raises:
-            ValueError: If no data is found in the context
-        """
         self.log(f"Processing CTD...")
 
+        # Pre-filter data based on QC flags defined in schema
         self.filter_qc()
 
-        # Convert xarray Dataset to Polars DataFrame for efficient numerical processing
-        # Extract only the variables needed for GSW calculations
+        # Extract only variables needed for GSW to Polars
         df = pl.from_pandas(
             self.data[
                 ["TIME", "LATITUDE", "LONGITUDE", "CNDC", "PRES", "TEMP"]
@@ -76,8 +75,6 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
             nan_to_null=False,
         )
 
-        # Define GSW (Gibbs SeaWater) function calls for deriving oceanographic variables
-        # Each tuple contains: (output_variable_name, gsw_function, [required_input_variables])
         gsw_function_calls = (
             ("DEPTH", gsw.z_from_p, ["PRES", "LATITUDE"]),
             ("PRAC_SALINITY", gsw.SP_from_C, ["CNDC", "TEMP", "PRES"]),
@@ -90,77 +87,85 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
             ("DENSITY", gsw.rho, ["ABS_SALINITY", "CONS_TEMP", "PRES"]),
         )
 
-        # Define metadata for each derived variable following CF conventions
         variable_metadata = {
-            "DEPTH": {
-                "long_name": "Depth from surface (negative down as defined by TEOS-10)",
-                "units": "meters [m]",
-                "standard_name": "DEPTH",
-                "valid_min": -10925,  # Mariana Trench depth
-                "valid_max": 1,  # Above sea level
-            },
-            "PRAC_SALINITY": {
-                "long_name": "Practical salinity",
-                "units": "unitless",
-                "standard_name": "PRAC_SALINITY",
-                "valid_min": 2,  # Extremely fresh water
-                "valid_max": 42,  # Hypersaline conditions
-            },
-            "ABS_SALINITY": {
-                "long_name": "Absolute salinity",
-                "units": "g/kg",
-                "standard_name": "ABS_SALINITY",
-                "valid_min": 0,  # Pure water
-                "valid_max": 1000,  # Pure salt (theoretical maximum)
-            },
-            "CONS_TEMP": {
-                "long_name": "Conservative temperature",
-                "units": "°C",
-                "standard_name": "CONS_TEMP",
-                "valid_min": -2,  # Freezing point of seawater
-                "valid_max": 102,  # Boiling point of seawater
-            },
-            "DENSITY": {
-                "long_name": "Density",
-                "units": "kg/m3",
-                "standard_name": "DENSITY",
-                "valid_min": 900,  # Warm, low salinity surface water
-                "valid_max": 1100,  # Cold, high salinity bottom water
-            },
+            "DEPTH": {"long_name": "Depth", "units": "m", "standard_name": "DEPTH"},
+            "PRAC_SALINITY": {"long_name": "Practical salinity", "units": "1", "standard_name": "PRAC_SALINITY"},
+            "ABS_SALINITY": {"long_name": "Absolute salinity", "units": "g/kg", "standard_name": "ABS_SALINITY"},
+            "CONS_TEMP": {"long_name": "Conservative temperature", "units": "°C", "standard_name": "CONS_TEMP"},
+            "DENSITY": {"long_name": "Density", "units": "kg/m3", "standard_name": "DENSITY"},
         }
 
-        # Process each GSW function call to derive new variables
         for var_name, func, args in gsw_function_calls:
             if var_name not in self.to_derive:
                 continue
 
             self.log(f"Deriving {var_name}...")
 
-            # Use Polars struct operations to efficiently apply GSW functions
-            # This approach handles vectorized operations across the entire dataset
             df = df.with_columns(
                 pl.struct(args)
                 .map_batches(lambda x: func(*(x.struct.field(arg) for arg in args)))
                 .alias(var_name)
             )
 
-            # Convert Polars column back to numpy array and add to xarray Dataset
             self.data[var_name] = (("N_MEASUREMENTS",), df[var_name].to_numpy())
-            # Attach CF-compliant metadata attributes
             self.data[var_name].attrs = variable_metadata[var_name]
 
-            # generate QC for the new column
-            self.generate_qc(
-                {f"{var_name}_QC": [f"{arg}_QC" for arg in args]}
-            )
+            # Propagate QC flags from parents to derived child
+            self.generate_qc({f"{var_name}_QC": [f"{arg}_QC" for arg in args]})
 
-        # self.log diagnostic information if diagnostics are enabled
-        if self.diagnostics:
-            self.log(df.describe(percentiles=[]))
-
+        # Put filtered bad data back if requested
         self.reconstruct_data()
         self.update_qc()
 
-        # Update the context with the enhanced dataset
+        if self.diagnostics:
+            if self.is_web_mode():
+                self.web_diagnostic_loop()
+            else:
+                matplotlib.use("tkagg")
+                fig = self.create_diagnostic_plot()
+                if fig:
+                    plt.show()
+
         self.context["data"] = self.data
         return self.context
+
+    def create_diagnostic_plot(self):
+        """Builds subplots for derived variables vs Time, excluding bad data."""
+        vars_to_plot = [v for v in self.to_derive if v in self.data.variables]
+        if not vars_to_plot:
+            return None
+
+        plot_df = pl.from_pandas(
+            self.data[vars_to_plot + ["TIME"] + [f"{v}_QC" for v in vars_to_plot]].to_dataframe(),
+            nan_to_null=False
+        )
+
+        # Downsample logic to maintain performance
+        nth = max(1, len(plot_df) // MAX_POINTS)
+        plot_df = plot_df.gather_every(nth)
+
+        fig, axs = plt.subplots(
+            nrows=len(vars_to_plot), 
+            ncols=1, 
+            figsize=(10, 3 * len(vars_to_plot)), 
+            sharex=True, 
+            dpi=PLOT_DPI
+        )
+        
+        if len(vars_to_plot) == 1:
+            axs = [axs]
+
+        for ax, var in zip(axs, vars_to_plot):
+            # Hide flags 3 (Prob Bad), 4 (Bad), and 9 (Missing)
+            clean_df = plot_df.filter(~pl.col(f"{var}_QC").is_in([3, 4, 9]))
+            
+            if len(clean_df) > 0:
+                ax.plot(clean_df["TIME"], clean_df[var], color=PLOT_COLOUR, lw=1, marker='.', ms=1)
+            
+            ax.set_ylabel(f"{var}\n({self.data[var].attrs.get('units', '')})")
+            ax.grid(True, alpha=0.3)
+            ax.set_title(f"Derived {var} (Filtered: Flags 3, 4, 9 hidden)", loc='left', fontsize=10)
+
+        axs[-1].set_xlabel("Time")
+        fig.tight_layout()
+        return fig

@@ -35,7 +35,6 @@ export function setupPlotView() {
             body: JSON.stringify({ action: 'continue', parameters: params })
         });
 
-        // Trigger the YAML update in the main window
         if (window.updateStepParameters) {
             window.updateStepParameters(stepName, params);
         }
@@ -61,7 +60,10 @@ export function handleDiagnosticSync(diagData) {
             img.style.opacity = '1';
             
             currentDiagGen = data.generation_id;
-            renderDiagParams(data.parameters);
+            
+            // Generate HTML string first, then set innerHTML once
+            const container = document.getElementById('diag-params');
+            container.innerHTML = renderDiagParamsRecursive(data.parameters);
             
             const btnRegen = document.getElementById('btn-diag-regen');
             btnRegen.disabled = false;
@@ -87,35 +89,78 @@ export function closeDiagnosticUI() {
     document.getElementById('diag-img').style.opacity = '1';
 }
 
-function renderDiagParams(params) {
-    const container = document.getElementById('diag-params');
+/**
+ * Recursive renderer to handle nested settings (like qc_handling_settings)
+ */
+function renderDiagParamsRecursive(params, parentPath = '') {
     let html = '';
-    for (const [key, val] of Object.entries(params)) {
-        const displayVal = Array.isArray(val) ? val.join(', ') : val;
-        html += `
-        <div style="margin-bottom: 12px;">
-            <label style="display: block; font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">${key}</label>
-            <input type="text" data-diag-key="${key}" value="${displayVal}" style="width: 100%; padding: 8px; border: 1px solid var(--border-colour); outline: none;">
-        </div>`;
+    const entries = Object.entries(params || {});
+
+    // Handle empty objects (like a QC test with no params)
+    if (entries.length === 0 && parentPath !== '') {
+        return `<div style="font-size: 10px; color: #94a3b8; font-style: italic; margin-bottom: 8px;">(No parameters)</div>`;
     }
-    container.innerHTML = html;
+
+    for (const [key, val] of entries) {
+        const currentPath = parentPath ? `${parentPath}.${key}` : key;
+
+        if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+            // It's a dictionary - wrap in a container and recurse
+            html += `
+            <div style="margin-bottom: 16px; padding-left: 8px; border-left: 2px solid var(--border-colour);">
+                <label style="display: block; font-size: 9px; font-weight: 800; color: var(--google-blue); text-transform: uppercase; margin-bottom: 6px;">${key}</label>
+                ${renderDiagParamsRecursive(val, currentPath)}
+            </div>`;
+        } else {
+            // It's a simple value - render the input
+            const displayVal = Array.isArray(val) ? val.join(', ') : val;
+            html += `
+            <div style="margin-bottom: 12px;">
+                <label style="display: block; font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">${key}</label>
+                <input type="text" data-diag-path="${currentPath}" value="${displayVal}" style="width: 100%; padding: 8px; border: 1px solid var(--border-colour); outline: none; border-radius: 4px;">
+            </div>`;
+        }
+    }
+    return html;
 }
 
 function getDiagParams() {
     const inputs = document.querySelectorAll('#diag-params input');
     const params = {};
+
     inputs.forEach(inp => {
-        const key = inp.dataset.diagKey;
+        const path = inp.dataset.diagPath.split('.');
         let val = inp.value;
-        if (val.includes(',')) {
-            params[key] = val.split(',').map(v => {
+
+        // Convert types
+        if (val.includes(',') && !isNaN(parseFloat(val.split(',')[0]))) {
+            val = val.split(',').map(v => {
                 const num = Number(v.trim());
                 return isNaN(num) ? v.trim() : num;
             });
         } else {
             const num = Number(val);
-            params[key] = isNaN(num) ? val : num;
+            if (!isNaN(num) && val.trim() !== '') {
+                val = num;
+            } else if (val.toLowerCase() === 'true') {
+                val = true;
+            } else if (val.toLowerCase() === 'false') {
+                val = false;
+            }
+        }
+
+        // Rebuild nested object
+        let current = params;
+        for (let i = 0; i < path.length; i++) {
+            const key = path[i];
+            if (i === path.length - 1) {
+                current[key] = val;
+            } else {
+                current[key] = current[key] || {};
+                current = current[key];
+            }
         }
     });
+
     return params;
 }

@@ -206,6 +206,9 @@ function attachStepListeners(context) {
                 const data = await res.json();
                 if (data.path) {
                     setNested(configData, btn.dataset.path, data.path);
+                    if (configData.steps[idx].name === "Load OG1") {
+                        handleAutoOutputPath(data.path);
+                    }
                     syncYaml(); 
                     parseAndRenderUI();
                 }
