@@ -1,19 +1,3 @@
-# This file is part of the NOC Autonomy Toolbox.
-#
-# Copyright 2025-2026 National Oceanography Centre and The Contributors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 from toolbox.steps.base_step import BaseStep, register_step
 from toolbox.utils.qc_handling import QCHandlingMixin
 import toolbox.utils.diagnostics as diag
@@ -27,9 +11,7 @@ import matplotlib.dates as mdates
 from matplotlib.collections import LineCollection
 import tkinter as tk
 from scipy.signal import savgol_filter
-import os
 
-# Internal constants (not user parameters)
 FIXED_SAVGOL_WINDOW_VERT = 5
 FIXED_SAVGOL_WINDOW_HORIZ = 3
 FIXED_SAVGOL_POLY = 2
@@ -199,7 +181,6 @@ def find_profiles_beta(df_sorted, cadence, filter_win_sizes, gradient_thresholds
 class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
     step_name = "Find Profiles Beta"
     
-    # NEW: The schema acts as the single source of truth for parameters!
     parameter_schema = {
         "depth_column": {"type": str, "default": "PRES", "description": "Name of the depth column"},
         "resample_cadence": {"type": str, "default": "30s"},
@@ -217,8 +198,6 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
         self.log("Attempting to designate profile numbers, directions, and gradients")
         self.filter_qc()
 
-        # Notice how clean this is. We don't use .get() anymore because BaseStep
-        # guarantees these exist as attributes!
         if not self.depth_column:
             if "PRES_ENG" in self.data.variables:
                 self.depth_column = "PRES_ENG"
@@ -238,20 +217,8 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
 
         if self.diagnostics:
             if self.is_web_mode():
-                # In web mode, generate the plot, save it, and move on.
-                fig = self.create_diagnostic_plot()
-                
-                # Make sure an output directory exists
-                out_dir = self.context.get("global_parameters", {}).get("out_directory", "./pipeline_output")
-                os.makedirs(out_dir, exist_ok=True)
-                
-                # Save plot
-                plot_path = os.path.join(out_dir, "find_profiles_beta_diagnostic.png")
-                fig.savefig(plot_path, dpi=200, bbox_inches="tight")
-                plt.close(fig)
-                self.log(f"Web Mode: Diagnostic plot saved to {plot_path}")
+                self.web_diagnostic_loop()
             else:
-                # If running locally, open the Tkinter parameter adjustment GUI
                 root = self.launch_interactive_gui()
                 root.mainloop()
 
@@ -303,7 +270,6 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
         return self.context
 
     def create_diagnostic_plot(self):
-        """Builds the matplotlib figure and returns it without showing it."""
         df_raw = self.data[["TIME", self.depth_column]].to_dataframe().reset_index()
         df_sorted = df_raw.dropna(subset=[self.depth_column, "TIME"]).sort_values("TIME").set_index("TIME")
 
@@ -316,11 +282,6 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
 
         fig_main, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 2, 1]})
 
-        up_mask = df_out["DIRECTION"] == 1
-        down_mask = df_out["DIRECTION"] == -1
-        horiz_mask = df_out["DIRECTION"] == 0
-        turn_mask = df_out["PROFILE_ID"].isna()
-
         x_num = mdates.date2num(df_smooth.index)
         points = np.array([x_num, -df_smooth["SMOOTH_DEPTH"].values]).T.reshape(-1, 1, 2)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
@@ -331,6 +292,7 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
         lc = LineCollection(segments, colors=colours, linewidths=LINE_WIDTH, zorder=0, alpha=0.7)
         ax1.add_collection(lc)
 
+        turn_mask = df_out["PROFILE_ID"].isna()
         ax1.plot(df_out[turn_mask].index, -df_out[turn_mask][self.depth_column], marker=".", ls="", ms=MARKER_SIZE, color=COLOUR_RAW, alpha=0.5, zorder=1, label="Unassigned Raw")
         
         for pid in df_out["PROFILE_ID"].dropna().unique():
@@ -372,7 +334,6 @@ class FindProfilesBetaStep(BaseStep, QCHandlingMixin):
         return fig_main
 
     def launch_interactive_gui(self):
-        """Constructs the Tkinter GUI and plots the interactive figure."""
         mpl.use("TkAgg")
 
         def update_plot():

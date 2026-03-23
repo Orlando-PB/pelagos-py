@@ -19,16 +19,21 @@
             --text-muted: #64748b;
             --border-colour: #e2e8f0;
             --radius: 16px;
-            --spacing-sm: 8px;
-            --spacing-md: 16px;
             --font-sans: 'Inter', system-ui, sans-serif;
             --font-mono: 'JetBrains Mono', monospace;
             --font-size: 13px;
+            
             --google-blue: #4285F4;
             --google-blue-hover: #3b77db;
             --google-red: #EA4335;
             --google-yellow: #FBBC05;
             --google-green: #34A853;
+            
+            --running-bg: #e0f2fe;
+            --running-border: #0ea5e9;
+            --error-colour: #ef4444;
+            --warning-colour: #f59e0b;
+
             --code-bg: #0f172a;
             --code-header: #1e293b;
         }
@@ -67,6 +72,11 @@
         .step-row.disabled-step .step-body { display: none !important; }
         .step-row.disabled-step .step-title { color: var(--text-muted); }
         
+        .step-row.running-step { background-color: var(--running-bg); border-left: 4px solid var(--running-border); }
+        .step-row.running-step .step-title { color: var(--running-border); }
+        .step-row.running-step .step-number { box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.2); animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(14, 165, 233, 0); } 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0); } }
+        
         .step-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; cursor: pointer; }
         .step-icon-wrapper { display: flex; align-items: center; gap: 16px; }
         .step-number { width: 32px; height: 32px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 13px; }
@@ -93,14 +103,7 @@
         .code-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background-color: var(--code-header); border-bottom: 1px solid #334155; color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
         .CodeMirror { height: 100%; font-family: var(--font-mono); font-size: 13px; background: transparent !important; }
 
-        /* Terminal Drawer CSS */
-        .terminal-drawer {
-            position: fixed; bottom: 0; left: 0; right: 0; height: 35vh;
-            background: #0f172a; color: #10b981; font-family: var(--font-mono); font-size: 12px;
-            padding: 16px; overflow: hidden; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            z-index: 100; border-top: 1px solid #334155; display: flex; flex-direction: column;
-            box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
-        }
+        .terminal-drawer { position: fixed; bottom: 0; left: 0; right: 0; height: 35vh; background: #0f172a; color: #10b981; font-family: var(--font-mono); font-size: 12px; padding: 16px; overflow: hidden; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 100; border-top: 1px solid #334155; display: flex; flex-direction: column; box-shadow: 0 -4px 12px rgba(0,0,0,0.15); }
         .terminal-drawer.open { transform: translateY(0); }
         .terminal-header { display: flex; justify-content: space-between; color: #cbd5e1; font-weight: 700; margin-bottom: 12px; font-family: var(--font-sans); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
         .terminal-content { flex: 1; overflow-y: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
@@ -135,6 +138,7 @@
             </div>
             <div style="width: 1px; height: 24px; background: var(--border-colour);"></div>
             <button id="btn-save" title="Save (Cmd/Ctrl + S)"><i data-lucide="save"></i> Save</button>
+            <button id="btn-cancel" class="danger" style="display: none;" title="Cancel Pipeline (Esc)"><i data-lucide="square"></i> Cancel</button>
             <button id="btn-run" class="primary"><i data-lucide="play"></i> Run Pipeline</button>
         </div>
     </header>
@@ -162,6 +166,27 @@
         <div id="terminal-content" class="terminal-content">Waiting for pipeline run...</div>
     </div>
 
+    <div id="diagnostic-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-colour); z-index: 200; flex-direction: column;">
+        <header style="padding: 12px 20px; border-bottom: 1px solid var(--border-colour); background: var(--panel-bg); display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-weight: 700; color: var(--text-colour); display: flex; align-items: center; gap: 12px;">
+                <div style="padding: 8px; background: #eff6ff; border-radius: var(--radius); color: var(--google-blue);"><i data-lucide="sliders-horizontal"></i></div>
+                Diagnostic Tuning: <span id="diag-step-name"></span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button id="btn-diag-cancel" class="danger" title="Cancel (Esc)"><i data-lucide="square"></i> Cancel</button>
+                <button id="btn-diag-regen" title="Regenerate (Cmd/Ctrl + Enter)"><i data-lucide="refresh-cw"></i> Regenerate</button>
+                <button id="btn-diag-continue" class="primary"><i data-lucide="check"></i> Continue</button>
+            </div>
+        </header>
+        <div style="display: flex; flex: 1; overflow: hidden;">
+            <div id="diag-params" style="width: 250px; border-right: 1px solid var(--border-colour); background: var(--panel-bg); padding: 16px; overflow-y: auto;">
+            </div>
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center; background: #e2e8f0; padding: 16px; overflow: hidden;">
+                <img id="diag-img" style="max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" />
+            </div>
+        </div>
+    </div>
+
     <footer>
         <div style="display: flex; align-items: center; gap: 16px;">
             <span style="display: flex; align-items: center; gap: 6px;"><div style="width: 8px; height: 8px; border-radius: var(--radius); background: var(--google-green);"></div> System Ready</span>
@@ -170,7 +195,9 @@
         <div>&copy; 2026 National Oceanography Centre</div>
     </footer>
 
-    <script>
+    <script type="module">
+        import { setupPlotView, handleDiagnosticSync, isDiagActive, closeDiagnosticUI } from '/static/plot_view.js';
+
         let masterConfig = null;
         let configData = { pipeline: {}, steps: [] };
         let availableQcList = [];
@@ -189,6 +216,7 @@
 
         async function init() {
             try {
+                setupPlotView();
                 const [resMaster, resConf, resQc] = await Promise.all([
                     fetch('/api/default-config'),
                     fetch('/api/config'),
@@ -247,9 +275,7 @@
                 });
 
                 parseAndRenderUI();
-            } catch (e) {
-                console.warn("YAML parsing issue while typing.");
-            }
+            } catch (e) {}
         }
 
         function parseAndRenderUI() {
@@ -285,13 +311,10 @@
             for (let i = 0; i <= stepIndex; i++) {
                 if (configData.steps[i].enabled) enabledIndex++;
             }
-            
             if (enabledIndex === -1) return;
 
             const lines = editor.getValue().split('\n'); 
-            let count = -1;
-            let startLine = -1;
-            let endLine = -1;
+            let count = -1; let startLine = -1; let endLine = -1;
 
             for (let i = 0; i < lines.length; i++) {
                 if (lines[i].trim().startsWith('- name:')) {
@@ -300,7 +323,6 @@
                     else if (count === enabledIndex + 1) { endLine = i - 1; break; }
                 }
             }
-            
             if (startLine !== -1) {
                 if (endLine === -1) endLine = lines.length - 1;
                 editor.scrollIntoView({line: startLine, ch: 0}, 200);
@@ -314,18 +336,13 @@
             for (let i = 0; i <= editor.getCursor().line; i++) { if (lines[i].trim().startsWith('- name:')) enabledCount++; }
             
             if (enabledCount !== -1) {
-                let actualIdx = -1;
-                let activeMatch = -1;
+                let actualIdx = -1; let activeMatch = -1;
                 for (let i = 0; i < configData.steps.length; i++) {
                     if (configData.steps[i].enabled) activeMatch++;
-                    if (activeMatch === enabledCount) {
-                        actualIdx = i;
-                        break;
-                    }
+                    if (activeMatch === enabledCount) { actualIdx = i; break; }
                 }
                 if (actualIdx !== -1 && actualIdx !== activeStepIndex) { 
-                    activeStepIndex = actualIdx; 
-                    parseAndRenderUI(); 
+                    activeStepIndex = actualIdx; parseAndRenderUI(); 
                 }
             }
         });
@@ -334,7 +351,7 @@
 
         document.querySelectorAll('.toggle-btn').forEach(btn => {
             btn.addEventListener('click', e => {
-                if (e.target.closest('#btn-toggle-term')) return; // Ignore terminal toggle
+                if (e.target.closest('#btn-toggle-term')) return;
                 document.querySelectorAll('.view-toggles .toggle-btn').forEach(b => b.classList.remove('active-toggle'));
                 const target = e.target.closest('.toggle-btn');
                 target.classList.add('active-toggle');
@@ -351,7 +368,6 @@
             });
         });
 
-        // --- Terminal Logic ---
         document.getElementById('btn-toggle-term').addEventListener('click', () => {
             termDrawer.classList.toggle('open');
             if (termDrawer.classList.contains('open')) fetchLogs();
@@ -370,7 +386,21 @@
 
         function stopLogPolling() {
             if (logInterval) clearInterval(logInterval);
-            fetchLogs(); // Final pull
+            fetchLogs(); 
+            closeDiagnosticUI();
+        }
+
+        function highlightRunningStep(stepName) {
+            document.querySelectorAll('.step-row').forEach(row => {
+                row.classList.remove('running-step');
+                const titleEl = row.querySelector('.step-title');
+                if (titleEl && titleEl.textContent === stepName) {
+                    row.classList.add('running-step');
+                    if (!row.classList.contains('active-step')) {
+                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+            });
         }
 
         async function fetchLogs() {
@@ -380,11 +410,13 @@
                 if (data.logs.length > 0) {
                     const formatted = data.logs.map(line => {
                         const safeLine = line.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                        if (safeLine.includes("ERROR") || safeLine.includes("Traceback") || safeLine.includes("Exception")) {
-                            return `<span style="color: #ef4444;">${safeLine}</span>`;
+                        const execMatch = safeLine.match(/Executing:\s*(.+)$/);
+                        if (execMatch) { highlightRunningStep(execMatch[1].trim()); }
+                        if (safeLine.includes("ERROR") || safeLine.includes("Traceback") || safeLine.includes("Exception") || safeLine.includes("Fatal error")) {
+                            return `<span style="color: var(--error-colour);">${safeLine}</span>`;
                         }
                         if (safeLine.includes("WARNING")) {
-                            return `<span style="color: #f59e0b;">${safeLine}</span>`;
+                            return `<span style="color: var(--warning-colour);">${safeLine}</span>`;
                         }
                         return safeLine;
                     }).join('\n');
@@ -393,14 +425,22 @@
                     termContent.innerHTML = formatted;
                     if (isScrolledToBottom) termContent.scrollTop = termContent.scrollHeight;
                 }
+
+                const diagRes = await fetch('/api/diagnostic');
+                const diagData = await diagRes.json();
+                handleDiagnosticSync(diagData);
             } catch (e) {}
         }
-        // ----------------------
 
         document.addEventListener('keydown', e => {
             if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); document.getElementById('btn-save').click(); }
-            if (e.key === 'Enter' && document.activeElement.tagName === 'INPUT') document.activeElement.blur();
-            if (e.key === 'Escape' && document.activeElement) document.activeElement.blur();
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && isDiagActive) { e.preventDefault(); document.getElementById('btn-diag-regen').click(); }
+            if (e.key === 'Enter' && document.activeElement.tagName === 'INPUT' && !isDiagActive) document.activeElement.blur();
+            if (e.key === 'Escape') {
+                if (isDiagActive) document.getElementById('btn-diag-cancel').click();
+                else if (document.getElementById('btn-cancel').style.display !== 'none') document.getElementById('btn-cancel').click();
+                else if (document.activeElement) document.activeElement.blur();
+            }
         });
 
         document.getElementById('btn-save').addEventListener('click', async () => {
@@ -410,27 +450,39 @@
             } catch (e) { showStatus('Failed to save', 'error'); }
         });
 
+        document.getElementById('btn-cancel').addEventListener('click', async () => {
+            await fetch('/api/cancel', { method: 'POST' });
+            showStatus('Pipeline Cancelled', 'error');
+        });
+
         document.getElementById('btn-run').addEventListener('click', async () => {
             document.getElementById('btn-save').click();
-            const btn = document.getElementById('btn-run');
-            btn.innerHTML = `<i data-lucide="loader-2" class="lucide-spin"></i> Running...`; 
-            lucide.createIcons(); 
-            btn.disabled = true;
-
-            startLogPolling();
-
+            const btnRun = document.getElementById('btn-run');
+            const btnCancel = document.getElementById('btn-cancel');
+            
+            btnRun.style.display = 'none';
+            btnCancel.style.display = 'flex';
+            
             try {
+                const valRes = await fetch('/api/validate');
+                const valData = await valRes.json();
+                if (valData.status === 'error') {
+                    throw new Error(valData.message || 'Validation failed. Check your configuration.');
+                }
+                
+                startLogPolling();
+
                 const res = await fetch('/api/run', { method: 'POST' });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Pipeline run failed');
                 showStatus(data.message);
             } catch (e) { 
-                showStatus('Pipeline run failed. Check logs.', 'error'); 
+                showStatus(e.message, 'error'); 
             } finally { 
                 stopLogPolling();
-                btn.innerHTML = `<i data-lucide="play"></i> Run Pipeline`; 
-                lucide.createIcons(); 
-                btn.disabled = false; 
+                btnRun.style.display = 'flex';
+                btnCancel.style.display = 'none';
+                document.querySelectorAll('.step-row').forEach(row => row.classList.remove('running-step'));
             }
         });
 

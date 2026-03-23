@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""This module defines the base class for pipeline steps and configurations."""
+
 from toolbox.utils.config_mirror import ConfigMirrorMixin
 import warnings
 import logging
@@ -22,11 +22,8 @@ import os
 warnings.formatwarning = lambda msg, *args, **kwargs: f"{msg}\n"
 
 REGISTERED_STEPS = {}
-"""Registry of explicitly registered step classes."""
-
 
 def register_step(cls):
-    """Decorator to mark a step class for inclusion in the pipeline."""
     step_name = getattr(cls, "step_name", None)
     if step_name is None:
         raise ValueError(
@@ -35,13 +32,7 @@ def register_step(cls):
     REGISTERED_STEPS[step_name] = cls
     return cls
 
-
 class BaseStep(ConfigMirrorMixin):
-    """
-    Base class for pipeline steps with config-mirroring support.
-    """
-    
-    # OVERRIDE THIS IN SUBCLASSES: Defines inputs, defaults, and descriptions
     parameter_schema = {}
 
     def __init__(self, name, parameters=None, diagnostics=False, context=None):
@@ -49,16 +40,13 @@ class BaseStep(ConfigMirrorMixin):
         self.diagnostics = diagnostics
         self.context = context or {}
         
-        # Get child logger initialized in pipeline.py
         self.logger = logging.getLogger(f"toolbox.pipeline.step.{self.name}")
 
-        # Inject defaults from schema if they are missing from user parameters
         self.parameters = parameters or {}
         for param_key, param_meta in self.parameter_schema.items():
             if param_key not in self.parameters:
                 self.parameters[param_key] = param_meta.get("default")
 
-        # === Initialise config mirror system ===
         self._init_config_mirror()
         
         self._parameters = {
@@ -69,7 +57,6 @@ class BaseStep(ConfigMirrorMixin):
         
         self._reset_parameter_bridge(mirror_keys=["parameters", "diagnostics"])
 
-        # Expose param keys as attributes (for user convenience)
         for key, value in self.parameters.items():
             setattr(self, key, value)
 
@@ -77,56 +64,104 @@ class BaseStep(ConfigMirrorMixin):
         
     @classmethod
     def get_schema(cls):
-        """Allows the FastAPI backend to read the required inputs dynamically."""
         return cls.parameter_schema
 
     def is_web_mode(self):
-        """Check if we are being executed by the FastAPI web backend."""
         return os.environ.get("AUTONOMY_WEB_MODE") == "1"
 
     def run(self):
-        """To be implemented by subclasses."""
         raise NotImplementedError(f"Step '{self.name}' must implement a run() method.")
         return self.context
 
     def generate_diagnostics(self):
-        """Hook for diagnostics (optional)."""
         pass
 
+    def web_diagnostic_loop(self):
+        self.log("Entering web diagnostic mode. Waiting for user input via dashboard...")
+        import urllib.request
+        import json
+        import base64
+        from io import BytesIO
+        import time
+        import matplotlib.pyplot as plt
+
+        api_base = "http://127.0.0.1:8000/api/internal"
+
+        while True:
+            fig = self.create_diagnostic_plot()
+            buf = BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+            plt.close(fig)
+            plot_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+            payload = {
+                "step_name": self.name,
+                "parameters": self.parameters,
+                "plot_b64": plot_b64,
+                "generation_id": int(time.time() * 1000)
+            }
+
+            req = urllib.request.Request(
+                f"{api_base}/pause",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            urllib.request.urlopen(req)
+
+            action_taken = False
+            while not action_taken:
+                time.sleep(1)
+                try:
+                    resp = urllib.request.urlopen(f"{api_base}/status")
+                    data = json.loads(resp.read().decode("utf-8"))
+                    
+                    if data.get("status") in ["regenerate", "continue", "cancel"]:
+                        ack_req = urllib.request.Request(
+                            f"{api_base}/ack",
+                            data=b"{}",
+                            headers={"Content-Type": "application/json"}
+                        )
+                        urllib.request.urlopen(ack_req)
+
+                        if data["status"] == "cancel":
+                            self.log("Pipeline cancelled by user during diagnostics.")
+                            raise InterruptedError("Pipeline cancelled by user.")
+
+                        new_params = data.get("parameters", {})
+                        self.update_parameters(**new_params)
+
+                        if data["status"] == "continue":
+                            return
+                        else:
+                            action_taken = True
+                except urllib.error.URLError:
+                    pass
+
     def log(self, message):
-        """Log an info-level message with step name prefix."""
         self.logger.info("[%s] %s", self.name, message)
 
     def log_warn(self, message, warning_type=UserWarning):
-        """Log a warning-level message with step name prefix."""
         self.logger.warning("[%s] %s", self.name, message)
         warnings.warn(f"[{self.name}] WARNING: {message}", warning_type)
 
     def check_data(self):
-        """Check for data in context for transformer steps."""
         if "data" not in self.context:
             raise ValueError("No data found in context. Please load data first.")
         else:
             self.log(f"Data found in context.")
 
-    # ----------- Config Handling -----------
-
     def update_parameters(self, **kwargs):
-        """Update parameter values both in attributes and in private store."""
         for k, v in kwargs.items():
             self.parameters[k] = v
             setattr(self, k, v)
         self._parameters["parameters"] = self.parameters
 
     def generate_config(self):
-        """Return this step's config dict (suitable for saving to YAML)."""
         self._sync_attributes_to_parameters()
         return dict(self._parameters)
 
     def save_config(self, path: str | None = None):
-        """Save this step's config to YAML (for standalone debugging)."""
         import yaml, os
-
         cfg = self.generate_config()
         if path is None:
             safe_name = self.name.replace(" ", "_").lower()
@@ -134,5 +169,4 @@ class BaseStep(ConfigMirrorMixin):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "w") as f:
             yaml.safe_dump(cfg, f, sort_keys=False)
-        print(f"[{self.name}] Step config saved → {path}")
         return cfg

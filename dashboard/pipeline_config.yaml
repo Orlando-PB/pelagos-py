@@ -1,7 +1,7 @@
 pipeline:
   name: Modern Glider Pipeline
   description: Full processing pipeline from Load to Export
-  visualisation: true
+  visualisation: false
 steps:
   - name: Load OG1
     parameters:
