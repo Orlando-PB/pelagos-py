@@ -16,15 +16,11 @@
 
 """QC test to identify impossible locations in LATITUDE and LONGITUDE variables."""
 
-#### Mandatory imports ####
 from toolbox.steps.base_test import BaseTest, register_qc, flag_cols
-
-#### Custom imports ####
 import polars as pl
 import xarray as xr
 import matplotlib
 import matplotlib.pyplot as plt
-
 
 @register_qc
 class impossible_location_test(BaseTest):
@@ -36,18 +32,15 @@ class impossible_location_test(BaseTest):
     """
 
     test_name = "impossible location test"
-    expected_parameters = {}
+    parameter_schema = {} 
     required_variables = ["LATITUDE", "LONGITUDE"]
     qc_outputs = ["LATITUDE_QC", "LONGITUDE_QC"]
 
     def return_qc(self):
-        # Convert to polars
         self.df = pl.from_pandas(
             self.data[self.required_variables].to_dataframe(), nan_to_null=False
         )
 
-        # Check LAT/LONG exist within expected bounds
-        # TODO: Add optional bounds via parameters (such as Southern Hemisphere, for example)
         for label, bounds in zip(["LATITUDE", "LONGITUDE"], [(-90, 90), (-180, 180)]):
             self.df = self.df.with_columns(
                 pl.when(pl.col(label).is_nan())
@@ -58,7 +51,6 @@ class impossible_location_test(BaseTest):
                 .alias(f"{label}_QC")
             )
 
-        # Convert back to xarray
         flags = self.df.select(pl.col("^.*_QC$"))
         self.flags = xr.Dataset(
             data_vars={
@@ -69,20 +61,17 @@ class impossible_location_test(BaseTest):
 
         return self.flags
 
-    def plot_diagnostics(self):
-        matplotlib.use("tkagg")
+    def create_diagnostic_plot(self):
         fig, axs = plt.subplots(nrows=2, figsize=(8, 6), sharex=True, dpi=200)
 
         for ax, var, bounds in zip(
             axs, ["LATITUDE", "LONGITUDE"], [(-90, 90), (-180, 180)]
         ):
             for i in range(10):
-                # Plot by flag number
                 plot_data = self.df.with_row_index().filter(pl.col(f"{var}_QC") == i)
                 if len(plot_data) == 0:
                     continue
 
-                # Plot the data
                 ax.plot(
                     plot_data["index"],
                     plot_data[var],
@@ -101,4 +90,12 @@ class impossible_location_test(BaseTest):
 
         fig.suptitle("Impossible Location Test")
         fig.tight_layout()
-        plt.show(block=True)
+        return fig
+
+    def plot_diagnostics(self):
+        if self.is_web_mode():
+            self.web_diagnostic_loop()
+        else:
+            matplotlib.use("tkagg")
+            fig = self.create_diagnostic_plot()
+            plt.show(block=True)

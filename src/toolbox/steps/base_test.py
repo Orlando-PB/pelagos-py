@@ -13,88 +13,133 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""This module defines the base class for QC tests and a registry for QC test classes."""
+
+"""Base class definition for Quality Control tests."""
+
+import os
+import logging
+import json
+import base64
+import time
+import urllib.request
+from io import BytesIO
+import matplotlib.pyplot as plt
 
 REGISTERED_QC = {}
 """Registry of explicitly registered QC test classes."""
 
-flag_cols = {
-    0: "gray",
-    1: "blue",
-    2: "lightblue",
-    3: "orange",
-    4: "red",
-    5: "gray",
-    6: "gray",
-    7: "gray",
-    8: "cyan",
-    9: "black",
-}
-"""Map of QC flag values to colors for diagnostics plotting."""
-
+# Keeping your original color map logic but as a list for faster indexing
+flag_cols = [
+    "gray",       # 0: NO_QC
+    "blue",       # 1: GOOD
+    "lightblue",  # 2: PROB_GOOD
+    "orange",     # 3: PROB_BAD
+    "red",        # 4: BAD
+    "gray",       # 5: VALUE_CHANGED
+    "gray",       # 6: NOT_USED
+    "gray",       # 7: NOT_USED
+    "cyan",       # 8: ESTIMATED
+    "black",      # 9: MISSING
+]
 
 def register_qc(cls):
-    """Decorator to mark QC tests that can be accessed by the ApplyQC step."""
+    """Decorator to mark QC tests for the ApplyQC step."""
     test_name = getattr(cls, "test_name", None)
     if test_name is None:
-        raise ValueError(
-            f"QC test {cls.__name__} is missing required 'test_name' attribute."
-        )
+        raise ValueError(f"QC test {cls.__name__} missing 'test_name' attribute.")
     REGISTERED_QC[test_name] = cls
     return cls
 
-
 class BaseTest:
-    """
-    Initializes a base class for quality control, to be further tweaked when inherited.
-
-    Follow the docstring format below when creating new QC tests.
-    
-    Target Variable: "Any" or a specific variable names (see impossible_location_test.py)
-    Flag Number: "Any" or a specific ARGO flag number
-    Variables Flagged: "Any" or specific variable names, possibly external to the target variable (see valid_profile_test.py)
-    Your description follows here.
-
-    Target Variable:
-    Flag Number:
-    Variables Flagged:
-    
-    """
-
     test_name = None
-    expected_parameters = {}
+    parameter_schema = {} # Replaces expected_parameters
     required_variables = []
     qc_outputs = []
 
     def __init__(self, data, **kwargs):
-        self.data = data.copy(deep=True)
+        # Maintain your deep copy logic for safety
+        self.data = data.copy(deep=True) if data is not None else None
+        self.logger = logging.getLogger(f"toolbox.qc.{self.test_name}")
+        
+        self.parameters = {}
+        # Fill parameters from schema defaults
+        for param_key, param_meta in self.parameter_schema.items():
+            self.parameters[param_key] = param_meta.get("default")
 
-        invalid_params = set(kwargs.keys()) - set(self.expected_parameters.keys())
-        if invalid_params:
-            raise KeyError(
-                f"Unexpected parameters for {self.test_name}: {invalid_params}"
-            )
-
+        # Overwrite with user-provided kwargs
         for k, v in kwargs.items():
-            self.expected_parameters[k] = v
+            if k not in self.parameter_schema:
+                raise KeyError(f"Unexpected parameter for {self.test_name}: {k}")
+            self.parameters[k] = v
 
-        for k, v in self.expected_parameters.items():
+        # Set attributes so self.max_speed works in the test code
+        for k, v in self.parameters.items():
             setattr(self, k, v)
 
         self.flags = None
 
+    def is_web_mode(self):
+        return os.environ.get("AUTONOMY_WEB_MODE") == "1"
+
+    def update_parameters(self, **kwargs):
+        for k, v in kwargs.items():
+            if k in self.parameter_schema:
+                self.parameters[k] = v
+                setattr(self, k, v)
+
     def return_qc(self):
-        """Representative of QC processing, to be overridden by subclasses.
+        """Implemented by sub-classes."""
+        raise NotImplementedError("QC tests must implement return_qc().")
 
-        Returns
-        -------
-        flags : array-like
-            Output QC flags for the data specific to the test.
-        """
-        self.flags = None  # replace with processing of some kind
-        return self.flags
+    def web_diagnostic_loop(self):
+        """Shared diagnostic loop for web dashboard."""
+        api_base = "http://127.0.0.1:8000/api/internal"
 
-    def plot_diagnostics(self):
-        """Representative of diagnostic plotting (optional)."""
-        # Any relevant diagnostic is generated or written out here
-        pass
+        while True:
+            fig = self.create_diagnostic_plot()
+            buf = BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+            plt.close(fig)
+            plot_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+            payload = {
+                "step_name": f"QC: {self.test_name}",
+                "parameters": self.parameters,
+                "plot_b64": plot_b64,
+                "generation_id": int(time.time() * 1000)
+            }
+
+            req = urllib.request.Request(
+                f"{api_base}/pause",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            urllib.request.urlopen(req)
+
+            action_taken = False
+            while not action_taken:
+                time.sleep(1)
+                try:
+                    resp = urllib.request.urlopen(f"{api_base}/status")
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    
+                    if resp_data.get("status") in ["regenerate", "continue", "cancel"]:
+                        ack_req = urllib.request.Request(
+                            f"{api_base}/ack", 
+                            data=b"{}", 
+                            headers={"Content-Type": "application/json"}
+                        )
+                        urllib.request.urlopen(ack_req)
+
+                        if resp_data["status"] == "cancel":
+                            raise InterruptedError("Pipeline cancelled by user.")
+
+                        new_params = resp_data.get("parameters", {})
+                        self.update_parameters(**new_params)
+
+                        if resp_data["status"] == "continue":
+                            return
+                        else:
+                            action_taken = True
+                except Exception:
+                    pass

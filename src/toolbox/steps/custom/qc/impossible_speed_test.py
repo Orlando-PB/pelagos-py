@@ -16,16 +16,12 @@
 
 """QC test to identify impossible speeds in glider data."""
 
-#### Mandatory imports ####
 from toolbox.steps.base_test import BaseTest, register_qc, flag_cols
-
-#### Custom imports ####
 import matplotlib.pyplot as plt
 import polars as pl
 import xarray as xr
 import numpy as np
 import matplotlib
-
 
 @register_qc
 class impossible_speed_test(BaseTest):
@@ -37,15 +33,24 @@ class impossible_speed_test(BaseTest):
     """
 
     test_name = "impossible speed test"
-    expected_parameters = {}
+    
+    parameter_schema = {
+        "max_speed": {
+            "type": float,
+            "default": 3.0,
+            "description": "Maximum allowable horizontal speed in m/s"
+        }
+    }
+    
     required_variables = ["TIME", "LATITUDE", "LONGITUDE"]
     qc_outputs = ["TIME_QC", "LATITUDE_QC", "LONGITUDE_QC"]
 
     def return_qc(self):
-        # Convert to polars
         self.df = pl.from_pandas(
             self.data[self.required_variables].to_dataframe(), nan_to_null=False
         )
+
+        max_speed = getattr(self, "max_speed", 3.0)
 
         self.df = self.df.with_columns(
             (pl.col("TIME").diff().cast(pl.Float64) * 1e-9).alias("dt")
@@ -61,17 +66,16 @@ class impossible_speed_test(BaseTest):
             self.df = self.df.with_columns(
                 (pl.col(f"delta_{label}") / pl.col("dt")).alias(f"{label}_speed")
             )
-        # Define absolute speed
+            
         self.df = self.df.with_columns(
             (
                 (pl.col("LATITUDE_speed") ** 2 + pl.col("LONGITUDE_speed") ** 2) ** 0.5
             ).alias("absolute_speed")
         )
 
-        # TODO: Does this need a flag for potentially bad data for cases where speed is inf?
         self.df = self.df.with_columns(
             (
-                (pl.col("absolute_speed") < 3)  #  Speed threshold
+                (pl.col("absolute_speed") < max_speed)  
                 & pl.col("absolute_speed").is_not_null()
                 & pl.col("absolute_speed").is_finite()
             ).alias("speed_is_valid")
@@ -85,7 +89,6 @@ class impossible_speed_test(BaseTest):
                 .alias(f"{label}_QC")
             )
 
-        # Convert back to xarray
         flags = self.df.select(pl.col("^.*_QC$"))
         self.flags = xr.Dataset(
             data_vars={
@@ -96,17 +99,15 @@ class impossible_speed_test(BaseTest):
 
         return self.flags
 
-    def plot_diagnostics(self):
-        matplotlib.use("tkagg")
+    def create_diagnostic_plot(self):
         fig, ax = plt.subplots(figsize=(8, 6), dpi=200)
+        max_speed = getattr(self, "max_speed", 3.0)
 
         for i in range(10):
-            # Plot by flag number
             plot_data = self.df.filter(pl.col("LATITUDE_QC") == i)
             if len(plot_data) == 0:
                 continue
 
-            # Plot the data
             ax.plot(
                 plot_data["TIME"],
                 plot_data["absolute_speed"],
@@ -120,10 +121,18 @@ class impossible_speed_test(BaseTest):
             title="Impossible Speed Test",
             xlabel="Time (s)",
             ylabel="Absolute Horizontal Speed (m/s)",
-            ylim=(0, 4),
+            ylim=(0, max_speed + 1),
         )
-        ax.axhline(3, ls="--", c="k")
+        ax.axhline(max_speed, ls="--", c="k")
         ax.legend(title="Flags", loc="upper right")
 
         fig.tight_layout()
-        plt.show(block=True)
+        return fig
+
+    def plot_diagnostics(self):
+        if self.is_web_mode():
+            self.web_diagnostic_loop()
+        else:
+            matplotlib.use("tkagg")
+            fig = self.create_diagnostic_plot()
+            plt.show(block=True)
