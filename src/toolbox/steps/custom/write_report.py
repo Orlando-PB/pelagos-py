@@ -43,18 +43,20 @@ def current_info() -> dict:
 
     now = datetime.now(timezone.utc)
 
+    try:
+        toolbox_version = version("pelagos-py")
+    except PackageNotFoundError:
+        toolbox_version = "unknown"
+
     info = {
         "timestamp_utc": now.isoformat(),
         "user": getpass.getuser(),
-        "toolbox_version": version(
-            "NOCAT"
-        ),  #   Normally done with __version__. "NOCAT" placeholder until name is known.
+        "toolbox_version": toolbox_version,  #   Normally done with __version__.
         "python_version": platform.python_version(),
         "system": f"{platform.system()}: {platform.release()}",
     }
 
     return info
-
 
 def write_conf_py(
     source_dir,
@@ -210,12 +212,12 @@ def build_qc_dict(data: xr.Dataset) -> dict:
         Structure:
         {
             "VAR_QC": {
-                "test_name": {
+                "qc_name": {
                     "params": {...},
                     "flag_counts": {...},
                     "stats": {...},
                 },
-                "test_name_2": {
+                "qc_name_2": {
                     ...
                 },
             }
@@ -232,13 +234,13 @@ def build_qc_dict(data: xr.Dataset) -> dict:
 
         # ID tests that were run for indexing.
         # _flag_cts seems like the least standardized name to ID qc with
-        test_names = [
+        qc_names = [
             attr.replace("_flag_cts", "")
             for attr in attrs
             if attr.endswith("_flag_cts")
         ]
 
-        for test in test_names:
+        for test in qc_names:
             params_key = f"{test}_params"
             flag_key = f"{test}_flag_cts"
             stats_key = f"{test}_stats"
@@ -272,9 +274,9 @@ def flatten_qc_dict(qc_dict: dict) -> list:
     -------
     rows: list of list
         A list of rows suitable for tabular display. Each row is a list:
-            [qc_var, test_name, flag, formatted_count]
+            [qc_var, qc_name, flag, formatted_count]
         - `qc_var` : str, the QC variable name
-        - `test_name` : str, the name of the QC test
+        - `qc_name` : str, the name of the QC test
         - `flag` : str, QC flag value
         - `formatted_count` : str, count formatted with thousands separator
     """
@@ -284,7 +286,7 @@ def flatten_qc_dict(qc_dict: dict) -> list:
         if not tests:
             continue
 
-        for test_name, test_data in tests.items():
+        for qc_name, test_data in tests.items():
             stats = test_data.get("stats", {})
             flag_counts = test_data.get("flag_counts", {})
 
@@ -295,7 +297,7 @@ def flatten_qc_dict(qc_dict: dict) -> list:
                 rows.append(
                     [
                         qc_var,
-                        test_name,
+                        qc_name,
                         flag,
                         f"{count:,}",
                     ]
