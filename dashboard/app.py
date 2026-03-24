@@ -97,6 +97,11 @@ def get_default_config():
             
             default_params = {k: v.get("default") for k, v in schema.items()}
             
+            if step_name == "Data Export":
+                for key in default_params.keys():
+                    if 'path' in key.lower() or 'file' in key.lower():
+                        default_params[key] = ""
+            
             steps_config.append({
                 "name": step_name,
                 "parameters": default_params,

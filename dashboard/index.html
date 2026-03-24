@@ -220,6 +220,14 @@
             const step = configData.steps.find(s => s.name === stepName);
             if (step) {
                 step.parameters = { ...step.parameters, ...newParams };
+                
+                if (stepName === "Load OG1") {
+                    const pathKey = Object.keys(newParams).find(k => k.toLowerCase().includes('path') || k.toLowerCase().includes('file'));
+                    if (pathKey && newParams[pathKey]) {
+                        handleAutoOutputPath(newParams[pathKey]);
+                    }
+                }
+                
                 syncYaml();
                 parseAndRenderUI();
                 document.getElementById('btn-save').click();
@@ -366,21 +374,20 @@
         function handleAutoOutputPath(inputPath) {
             if (!inputPath || typeof inputPath !== 'string') return;
 
-            // 1. Generate the new name
-            const extension = inputPath.split('.').pop();
-            const basePath = inputPath.substring(0, inputPath.lastIndexOf('.'));
-            const processedPath = `${basePath}_processed.${extension}`;
+            const lastDotIndex = inputPath.lastIndexOf('.');
+            if (lastDotIndex === -1) return; 
 
-            // 2. Find the Data Export step in our master data
+            const extension = inputPath.substring(lastDotIndex);
+            const basePath = inputPath.substring(0, lastDotIndex);
+            const processedPath = `${basePath}_processed${extension}`;
+
             const exportStep = configData.steps.find(s => s.name === "Data Export");
             
             if (exportStep) {
-                // Update the parameter (assumes key is 'output_path')
-                exportStep.parameters.output_path = processedPath;
+                const outPathKey = Object.keys(exportStep.parameters || {}).find(k => k.toLowerCase().includes('path') || k.toLowerCase().includes('file')) || 'output_path';
                 
-                // 3. Sync and Refresh UI
-                syncYaml();
-                parseAndRenderUI();
+                exportStep.parameters[outPathKey] = processedPath;
+                
                 showStatus('Output path updated automatically', 'info');
             }
         }
