@@ -1,0 +1,6 @@
+
+		begin
+      f = addfile("/Users/orlpru/Documents/Github/pelagos-py/tests/test_data/noc_bioC.nc","r")
+      print(f)
+		end
+    
