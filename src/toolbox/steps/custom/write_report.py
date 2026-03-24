@@ -43,18 +43,20 @@ def current_info() -> dict:
 
     now = datetime.now(timezone.utc)
 
+    try:
+        toolbox_version = version("pelagos-py")
+    except PackageNotFoundError:
+        toolbox_version = "unknown"
+
     info = {
         "timestamp_utc": now.isoformat(),
         "user": getpass.getuser(),
-        "toolbox_version": version(
-            "NOCAT"
-        ),  #   Normally done with __version__. "NOCAT" placeholder until name is known.
+        "toolbox_version": toolbox_version,  #   Normally done with __version__.
         "python_version": platform.python_version(),
         "system": f"{platform.system()}: {platform.release()}",
     }
 
     return info
-
 
 def write_conf_py(
     source_dir,
