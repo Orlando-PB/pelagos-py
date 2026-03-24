@@ -16,7 +16,10 @@
 
 """QC test to identify impossible speeds in glider data."""
 
-from toolbox.steps.base_test import BaseTest, register_qc, flag_cols
+#### Mandatory imports ####
+from toolbox.steps.base_qc import BaseTest, register_qc, flag_cols
+
+#### Custom imports ####
 import matplotlib.pyplot as plt
 import polars as pl
 import xarray as xr
@@ -24,7 +27,7 @@ import numpy as np
 import matplotlib
 
 @register_qc
-class impossible_speed_test(BaseTest):
+class impossible_speed_qc(BaseTest):
     """
     Target Variable: TIME, LATITUDE, LONGITUDE
     Flag Number: 4 (bad data)
@@ -42,6 +45,8 @@ class impossible_speed_test(BaseTest):
         }
     }
     
+    test_name = "impossible speed qc"
+    expected_parameters = {}
     required_variables = ["TIME", "LATITUDE", "LONGITUDE"]
     qc_outputs = ["TIME_QC", "LATITUDE_QC", "LONGITUDE_QC"]
 

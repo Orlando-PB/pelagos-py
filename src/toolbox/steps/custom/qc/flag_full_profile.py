@@ -18,7 +18,7 @@
 
 #### Mandatory imports ####
 import numpy as np
-from toolbox.steps.base_test import BaseTest, register_qc, flag_cols
+from toolbox.steps.base_qc import BaseTest, register_qc, flag_cols
 
 #### Custom imports ####
 import matplotlib.pyplot as plt

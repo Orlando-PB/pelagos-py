@@ -14,51 +14,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""QC test for flagging using spike/despike detection methods."""
+"""QC test(s) for flagging based on value ranges."""
 
 #### Mandatory imports ####
 import numpy as np
-from toolbox.steps.base_test import BaseTest, register_qc, flag_cols
+from toolbox.steps.base_qc import BaseTest, register_qc, flag_cols
 
 #### Custom imports ####
 import matplotlib.pyplot as plt
 import xarray as xr
 import matplotlib
-from tqdm import tqdm
 
 
 @register_qc
-class spike_test(BaseTest):
+class impossible_range_qc(BaseTest):
     """
     Target Variable: Any
-    Flag Number: 4 (bad)
+    Flag Number: Any
     Variables Flagged: Any
-    Checks for spiking in the data using rolling median values compared against the
-    meadian average deviation (MAD).
+    Checks that a meausurement is within a reasonable range.
 
     EXAMPLE
     -------
     - name: "Apply QC"
       parameters:
         qc_settings: {
-            "spike test": {
-              "variables": {"PRES": 2, "LATITUDE": 1},
+            "impossible range qc": {
+              "variable_ranges": {"PRES": {3: [-2, 0], 4: [-999, -2]}, "LATITUDE": {4: [-90, 90]}},
               "also_flag": {"PRES": ["CNDC", "TEMP"], "LATITUDE": ["LONGITUDE"]},
               "plot": ["PRES", "LATITUDE"]
-              "window_size": 10,
+              "test_depth_range": [-100, 0]  # OPTIONAL
             }
         }
       diagnostics: true
     """
 
-    test_name = "spike test"
+    test_name = "impossible range qc"
 
     # Specify if test target variable is user-defined (if True, __init__ has to be redefined)
     dynamic = True
 
     def __init__(self, data, **kwargs):
         # Check the necessary kwargs are available
-        required_kwargs = {"variables", "also_flag", "plot"}
+        required_kwargs = {"variable_ranges", "also_flag", "plot"}
         if not required_kwargs.issubset(set(kwargs.keys())):
             raise KeyError(
                 f"{required_kwargs - set(kwargs.keys())} are missing from {self.test_name} settings"
@@ -69,10 +67,15 @@ class spike_test(BaseTest):
             k: v for k, v in kwargs.items() if k in required_kwargs
         }
         self.required_variables = list(
-            set(self.expected_parameters["variables"].keys())
-        ) + ["PROFILE_NUMBER"]
+            set(self.expected_parameters["variable_ranges"].keys())
+        )
+        self.tested_variables = self.required_variables.copy()
+        if "test_depth_range" in kwargs.keys():
+            self.required_variables.append("DEPTH")
+            self.test_depth_range = kwargs["test_depth_range"]
+
         self.qc_outputs = list(
-            set(f"{var}_QC" for var in self.required_variables)
+            set(f"{var}_QC" for var in self.tested_variables)
             | set(
                 f"{var}_QC"
                 for var in sum(self.expected_parameters["also_flag"].values(), [])
@@ -82,10 +85,8 @@ class spike_test(BaseTest):
         if data is not None:
             self.data = data.copy(deep=True)
 
-        # set attributes
         for k, v in self.expected_parameters.items():
             setattr(self, k, v)
-        self.window_size = kwargs.get("window_size") or 50
 
         self.flags = None
 
@@ -93,58 +94,42 @@ class spike_test(BaseTest):
         # Subset the data
         self.data = self.data[self.required_variables]
 
-        # Generate the variable-specific flags
-        for var, sensitivity in self.variables.items():
-            spike_qc = np.full(len(self.data[var]), 0)
-
-            # Apply the checks across individual profiles
-            profile_numbers = np.unique(
-                self.data["PROFILE_NUMBER"].dropna(dim="N_MEASUREMENTS")
+        # If the user specified a depth range, limit the checks to that range
+        if hasattr(self, "test_depth_range"):
+            # TODO: -DEPTH
+            depth_range_mask = (self.data["DEPTH"] >= self.test_depth_range[0]) & (
+                self.data["DEPTH"] <= self.test_depth_range[1]
             )
-            for profile_number in tqdm(
-                profile_numbers,
-                colour="green",
-                desc=f"\033[97mProgress [{var}]\033[0m",
-                unit="prof",
-            ):
-                # Subset the data
-                profile = self.data.where(
-                    self.data["PROFILE_NUMBER"] == profile_number, drop=True
+        else:
+            depth_range_mask = True
+
+        # Make the empty QC columns
+        for var in self.tested_variables:
+            self.data[f"{var}_QC"] = (
+                ["N_MEASUREMENTS"],
+                np.full(len(self.data[var]), 0),
+            )
+
+        # Generate the variable-specific flags
+        for var, meta in self.variable_ranges.items():
+            for flag, bounds in meta.items():
+                self.data[f"{var}_QC"] = xr.where(
+                    (
+                        depth_range_mask
+                        & (self.data[var] > bounds[0])
+                        & (self.data[var] < bounds[1])
+                        & (self.data[f"{var}_QC"] == 0)
+                    ),
+                    flag,
+                    0,
                 )
 
-                # remove nans
-                var_data = profile[var].dropna(dim="N_MEASUREMENTS")
-                if len(var_data) < self.window_size:
-                    continue
-
-                # Calculate the residules from the running median of the data
-                rolling_median = (
-                    var_data.to_pandas()
-                    .rolling(window=self.window_size, center=True)
-                    .median()
-                    .to_numpy()
-                )
-                residules = var_data - rolling_median
-
-                # Define the residule threshold
-                threshold = np.nanstd(residules) * sensitivity
-
-                # Apply the threshold to residules to get the flags
-                spike_flags = np.where((np.abs(residules) > threshold), 4, 1)
-
-                # Reinclude the nans as missing (9) flags
-                nan_mask = np.isnan(profile[var])
-                profile_flags = np.where(nan_mask, 9, 1)
-                profile_flags[np.where(~nan_mask)] = spike_flags
-
-                # Stitch the QC results back into the QC container
-                profile_indices = np.where(
-                    self.data["PROFILE_NUMBER"] == profile_number
-                )
-                spike_qc[profile_indices] = profile_flags
-
-            # Add the flags to the data
-            self.data[f"{var}_QC"] = (["N_MEASUREMENTS"], spike_qc)
+            # Replace all remaining 0s (unchecked) with 1s (good)
+            self.data[f"{var}_QC"] = xr.where(
+                depth_range_mask & (self.data[f"{var}_QC"] == 0),
+                1,
+                self.data[f"{var}_QC"],
+            )
 
             # Broadcast the QC found for var into variables specified by "also_flag"
             if extra_vars := self.also_flag.get(var):
@@ -164,14 +149,12 @@ class spike_test(BaseTest):
         # If not plots were specified
         if len(self.plot) == 0:
             print(
-                f"WARNING: In '{self.test_name}', diagnostics were called but no variables were specified for plotting."
+                "WARNING: In 'range test' diagnostics were called but no plots were specified."
             )
             return
 
         # Plot the QC output
-        fig, axs = plt.subplots(
-            nrows=len(self.plot), figsize=(8, 6), sharex=True, dpi=200
-        )
+        fig, axs = plt.subplots(nrows=len(self.plot), figsize=(8, 6), dpi=200)
         if len(self.plot) == 1:
             axs = [axs]
 
@@ -202,10 +185,14 @@ class spike_test(BaseTest):
                     label=f"{i}",
                 )
 
+            for bounds in self.variable_ranges[var].values():
+                for bound in bounds:
+                    ax.axhline(bound, ls="--", c="k")
+
             ax.set(
                 xlabel="Index",
                 ylabel=var,
-                title=f"{var} Spike Test",
+                title=f"{var} Range Test",
             )
 
             ax.legend(title="Flags", loc="upper right")

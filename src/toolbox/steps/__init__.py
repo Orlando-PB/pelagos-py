@@ -19,17 +19,12 @@ import importlib
 import pathlib
 import yaml
 from .base_step import REGISTERED_STEPS
-
-try:
-    from .base_test import REGISTERED_QC
-except ImportError:
-    REGISTERED_QC = {}
+from .base_qc import REGISTERED_QC
 
 STEP_CLASSES = {}
 QC_CLASSES = {}
-STEP_DEPENDENCIES = {
-    "QC: Salinity": ["Load OG1"],
-}
+"""Dictionary mapping QC test names to their implementing classes."""
+
 
 def discover_steps():
     base_dir = pathlib.Path(__file__).parent.resolve()

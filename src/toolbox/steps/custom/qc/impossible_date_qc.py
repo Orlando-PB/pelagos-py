@@ -16,7 +16,10 @@
 
 """QC test to identify impossible dates in TIME variable."""
 
-from toolbox.steps.base_test import BaseTest, register_qc, flag_cols
+#### Mandatory imports ####
+from toolbox.steps.base_qc import BaseTest, register_qc, flag_cols
+
+#### Custom imports ####
 import polars as pl
 import xarray as xr
 from datetime import datetime
@@ -24,7 +27,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 @register_qc
-class impossible_date_test(BaseTest):
+class impossible_date_qc(BaseTest):
     """
     Target Variable: TIME
     Flag Number: 4 (bad data)
@@ -32,7 +35,7 @@ class impossible_date_test(BaseTest):
     Checks that the datetime of each point is valid.
     """
 
-    test_name = "impossible date test"
+    test_name = "impossible date qc"
     
     parameter_schema = {
         "start_year": {

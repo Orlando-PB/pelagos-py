@@ -18,15 +18,16 @@
 
 #### Mandatory imports ####
 # from toolbox.steps.base_test import BaseTest, register_qc, flag_cols # Uncomment when implementing
-from toolbox.steps.base_test import BaseTest
+from toolbox.steps.base_qc import BaseTest
 
 #### Custom imports ####
 # any additional imports required for the test go here
 
 
 # @register_qc  # Uncomment when implementing
-class impossible_date_test(BaseTest):
+class blank_qc(BaseTest):
     """
+    Example Docstring:
     Target Variable: TIME
     Flag Number: 4 (bad data)
     Variables Flagged: TIME

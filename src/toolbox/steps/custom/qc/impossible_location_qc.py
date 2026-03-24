@@ -14,28 +14,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""QC test that identifies glider positions not located on land and flags accordingly."""
+"""QC test to identify impossible locations in LATITUDE and LONGITUDE variables."""
 
-from toolbox.steps.base_test import BaseTest, register_qc, flag_cols
-from geodatasets import get_path
-import matplotlib.pyplot as plt
-import shapely as sh
+#### Mandatory imports ####
+from toolbox.steps.base_qc import BaseTest, register_qc, flag_cols
+
+#### Custom imports ####
 import polars as pl
 import xarray as xr
 import matplotlib
-import geopandas
+import matplotlib.pyplot as plt
 
 @register_qc
-class position_on_land_test(BaseTest):
+class impossible_location_qc(BaseTest):
     """
     Target Variable: LATITUDE, LONGITUDE
     Flag Number: 4 (bad data)
     Variables Flagged: LATITUDE, LONGITUDE
-    Checks that the measurement location is not on land.
+    Checks that the latitude and longitude are valid.
     """
 
-    test_name = "position on land test"
-    parameter_schema = {}
+    test_name = "impossible location qc"
+    expected_parameters = {}
     required_variables = ["LATITUDE", "LONGITUDE"]
     qc_outputs = ["LATITUDE_QC", "LONGITUDE_QC"]
 
@@ -44,24 +44,15 @@ class position_on_land_test(BaseTest):
             self.data[self.required_variables].to_dataframe(), nan_to_null=False
         )
 
-        self.world = geopandas.read_file(get_path("naturalearth.land"))
-        land_polygons = sh.ops.unary_union(self.world.geometry)
-
-        self.df = self.df.with_columns(
-            pl.struct("LONGITUDE", "LATITUDE")
-            .map_batches(
-                lambda x: sh.contains_xy(
-                    land_polygons,
-                    x.struct.field("LONGITUDE").to_numpy(),
-                    x.struct.field("LATITUDE").to_numpy(),
-                )
-                * 4
+        for label, bounds in zip(["LATITUDE", "LONGITUDE"], [(-90, 90), (-180, 180)]):
+            self.df = self.df.with_columns(
+                pl.when(pl.col(label).is_nan())
+                .then(9)
+                .when((pl.col(label) > bounds[0]) & (pl.col(label) < bounds[1]))
+                .then(1)
+                .otherwise(4)
+                .alias(f"{label}_QC")
             )
-            .replace({0: 1})
-            .alias("LONGITUDE_QC")
-        )
-        
-        self.df = self.df.with_columns(pl.col("LONGITUDE_QC").alias("LATITUDE_QC"))
 
         flags = self.df.select(pl.col("^.*_QC$"))
         self.flags = xr.Dataset(
@@ -74,30 +65,33 @@ class position_on_land_test(BaseTest):
         return self.flags
 
     def create_diagnostic_plot(self):
-        fig, ax = plt.subplots(figsize=(12, 8), dpi=200)
+        fig, axs = plt.subplots(nrows=2, figsize=(8, 6), sharex=True, dpi=200)
 
-        self.world.plot(ax=ax, facecolor="lightgray", edgecolor="black", alpha=0.3)
+        for ax, var, bounds in zip(
+            axs, ["LATITUDE", "LONGITUDE"], [(-90, 90), (-180, 180)]
+        ):
+            for i in range(10):
+                plot_data = self.df.with_row_index().filter(pl.col(f"{var}_QC") == i)
+                if len(plot_data) == 0:
+                    continue
 
-        for i in range(10):
-            plot_data = self.df.filter(pl.col("LATITUDE_QC") == i)
-            if len(plot_data) == 0:
-                continue
-
-            ax.plot(
-                plot_data["LONGITUDE"],
-                plot_data["LATITUDE"],
-                c=flag_cols[i],
-                ls="",
-                marker="o",
-                label=f"{i}",
+                ax.plot(
+                    plot_data["index"],
+                    plot_data[var],
+                    c=flag_cols[i],
+                    ls="",
+                    marker="o",
+                    label=f"{i}",
+                )
+            ax.set(
+                xlabel="Index",
+                ylabel=var,
             )
+            ax.legend(title="Flags", loc="upper right")
+            for bound in bounds:
+                ax.axhline(bound, ls="--", c="k")
 
-        ax.set(
-            xlabel="Longitude",
-            ylabel="Latitude",
-            title="Position On Land Test",
-        )
-        ax.legend(title="Flags", loc="upper right")
+        fig.suptitle("Impossible Location Test")
         fig.tight_layout()
         return fig
 
