@@ -43,6 +43,8 @@ class LoadOG1(BaseStep):
     """
 
     step_name = "Load OG1"
+    required_variables = []
+    provided_variables = ["TIME", "LATITUDE", "LONGITUDE", "PRES", "TEMP", "CNDC"]
 
     def run(self):
         # load data from xarray
