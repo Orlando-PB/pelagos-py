@@ -371,7 +371,7 @@
             }
         });
 
-        function handleAutoOutputPath(inputPath) {
+        window.handleAutoOutputPath = function(inputPath) {
             if (!inputPath || typeof inputPath !== 'string') return;
 
             const lastDotIndex = inputPath.lastIndexOf('.');

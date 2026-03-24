@@ -10,11 +10,11 @@ steps:
   - name: Apply QC
     parameters:
       qc_settings:
-        impossible date test: {}
-        impossible location test: {}
-        position on land test: {}
-        impossible speed test: {}
-        range test:
+        impossible date qc: {}
+        impossible location qc: {}
+        position on land qc: {}
+        impossible speed qc: {}
+        impossible range qc:
           variable_ranges:
             PRES:
               3: [-5, -2.4]

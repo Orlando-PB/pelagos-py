@@ -247,11 +247,11 @@ def get_available_qc():
         return {"tests": list(QC_CLASSES.keys())}
     except Exception as e:
         return {"tests": [
-            "impossible date test", "impossible location test", 
-            "position on land test", "impossible speed test", 
-            "range test", "gross range test", "stuck value test", 
-            "spike test", "valid profile test", "flag full profile", 
-            "PAR irregularity test"
+            "impossible date qc", "impossible location qc", 
+            "position on land qc", "impossible speed qc", 
+            "impossible range qc", "gross range qc", "stuck value qc", 
+            "spike qc", "valid profile qc", "flag full profile", 
+            "PAR irregularity qc"
         ]}
     
 @app.post("/api/internal/pause")

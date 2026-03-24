@@ -14,7 +14,6 @@ const uiConfig = {
 
 function renderParams(params, basePath, availableQcList) {
     let html = '';
-    // Ensure params is an object to avoid crashes
     const entries = Object.entries(params || {});
     
     for (const [key, val] of entries) {
@@ -27,26 +26,24 @@ function renderParams(params, basePath, availableQcList) {
                 <div style="flex:1; border-left:2px solid var(--border-colour); padding-left:16px; min-height: 20px;">`;
             
             for (const [qcTest, qcParams] of Object.entries(val)) {
-                // Ensure qcParams is at least an empty object for destructuring
                 const safeQcParams = qcParams || {};
                 const isDiag = safeQcParams.diagnostics === true;
                 
                 html += `
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; background:#f1f5f9; padding:6px 10px; border-radius:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; background:#f1f5f9; padding:6px 10px; border-radius:var(--radius);">
                     <span style="font-weight:700; color:#1e293b; font-size:11px;">${qcTest}</span>
                     <div style="display:flex; align-items:center; gap:12px;">
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <span style="font-size:9px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Diag</span>
-                            <label class="switch" style="transform: scale(0.75);">
+                        <div style="display:flex; align-items:center; gap:6px;" title="Toggle specific diagnostics for this test">
+                            <i data-lucide="line-chart" style="width:14px; height:14px; color:var(--text-muted);"></i>
+                            <label class="switch" style="transform: scale(0.75); transform-origin: right center;">
                                 <input type="checkbox" class="qc-diag-toggle" data-path="${path}.${qcTest}.diagnostics" ${isDiag ? 'checked' : ''}>
                                 <span class="slider"></span>
                             </label>
                         </div>
-                        <button class="danger btn-del-param" data-path="${path}.${qcTest}" style="padding:4px;"><i data-lucide="x" style="width:14px; height:14px;"></i></button>
+                        <button class="danger btn-del-param" data-path="${path}.${qcTest}" style="padding:4px; border-radius:var(--radius);" title="Remove this QC test"><i data-lucide="x" style="width:14px; height:14px;"></i></button>
                     </div>
                 </div>`;
                 
-                // Remove diagnostics from the nested parameter render so it doesn't show as a text box
                 const { diagnostics, ...pureParams } = safeQcParams;
                 const nestedHtml = renderParams(pureParams, `${path}.${qcTest}`, availableQcList);
                 if (nestedHtml) {
@@ -56,7 +53,7 @@ function renderParams(params, basePath, availableQcList) {
             
             html += `
                     <div style="display:flex; gap:8px; margin-top: 8px;">
-                        <select class="sel-add-qc" data-path="${path}" style="font-size: 11px; padding: 4px 8px;">
+                        <select class="sel-add-qc" data-path="${path}" style="font-size: 11px; padding: 4px 8px; border-radius:var(--radius);">
                             <option value="">+ Add QC Test...</option>
                             ${availableQcList.map(t => `<option value="${t}">${t}</option>`).join('')}
                         </select>
@@ -149,7 +146,7 @@ function generateStepsHTML(configData, activeStepIndex, availableQcList) {
                             <input type="checkbox" data-path="steps.${idx}.diagnostics" ${step.diagnostics ? 'checked' : ''}>
                             <span class="slider"></span>
                         </label>
-                        <span style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Enable Diagnostics</span>
+                        <span style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Enable Step Diagnostics</span>
                     </div>
                 </div>
             </div>
@@ -169,7 +166,17 @@ function attachStepListeners(context) {
         el.addEventListener('change', e => {
             let val = e.target.value;
             if (val === 'true') val = true; else if (val === 'false') val = false; else if (!isNaN(val) && val !== '') val = Number(val);
-            setNested(configData, e.target.dataset.path, val); syncYaml();
+            setNested(configData, e.target.dataset.path, val); 
+            
+            const parts = e.target.dataset.path.split('.');
+            if (parts[0] === 'steps' && configData.steps[parts[1]]?.name === "Load OG1") {
+                if (typeof window.handleAutoOutputPath === 'function') {
+                    window.handleAutoOutputPath(val);
+                }
+            }
+            
+            syncYaml();
+            parseAndRenderUI();
         });
     });
 
@@ -206,9 +213,14 @@ function attachStepListeners(context) {
                 const data = await res.json();
                 if (data.path) {
                     setNested(configData, btn.dataset.path, data.path);
-                    if (configData.steps[idx].name === "Load OG1") {
-                        handleAutoOutputPath(data.path);
+                    
+                    const parts = btn.dataset.path.split('.');
+                    if (parts[0] === 'steps' && configData.steps[parts[1]]?.name === "Load OG1") {
+                        if (typeof window.handleAutoOutputPath === 'function') {
+                            window.handleAutoOutputPath(data.path);
+                        }
                     }
+                    
                     syncYaml(); 
                     parseAndRenderUI();
                 }

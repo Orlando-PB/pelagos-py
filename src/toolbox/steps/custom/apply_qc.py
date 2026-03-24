@@ -34,15 +34,14 @@ class ApplyQC(BaseStep):
 
     step_name = "Apply QC"
 
-    # Updated schema to include your foundational QC tests by default
     parameter_schema = {
         "qc_settings": {
             "type": dict,
             "default": {
-                "impossible date test": {},
-                "impossible location test": {},
-                "position on land test": {},
-                "impossible speed test": {
+                "impossible date qc": {},
+                "impossible location qc": {},
+                "position on land qc": {},
+                "impossible speed qc": {
                     "max_speed": 3.0
                 }
             },
@@ -54,7 +53,6 @@ class ApplyQC(BaseStep):
         """
         Method for taking in new flags (new_flags) and cross checking against existing flags.
         """
-        # Define combinatrix for handling flag upgrade behaviour
         qc_combinatrix = np.array(
             [
                 [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -147,7 +145,6 @@ class ApplyQC(BaseStep):
         for qc_test_name, qc_test_params in self.qc_settings.items():
             self.log(f"Applying: {qc_test_name}")
             
-            # Extract diagnostics flag and filter it from the params passed to the test class
             show_diag = self.diagnostics or qc_test_params.get("diagnostics", False)
             params_to_pass = {k: v for k, v in qc_test_params.items() if k != "diagnostics"}
             
