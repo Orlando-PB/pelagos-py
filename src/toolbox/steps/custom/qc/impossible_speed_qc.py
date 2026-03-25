@@ -66,19 +66,20 @@ class impossible_speed_qc(BaseQC):
         # Radius of Earth is approx 6371000 metres
         distance_m = 6371000.0 * 2 * np.arcsin(np.sqrt(a))
 
-        # Calculate absolute speed in metres per second
+        # Calculate raw absolute speed arriving at each point
         self.absolute_speed = distance_m / dt
-
-        # First row will be NaN because there is no previous point to calculate speed.
-        # We fill the first NaN with 0.0 so it passes the valid speed check.
         self.absolute_speed = self.absolute_speed.fillna(0.0)
 
-        # TODO: Does this need a flag for potentially bad data for cases where speed is inf?
-        speed_is_valid = (
-            (self.absolute_speed < 3.0)  #  Speed threshold
-            & self.absolute_speed.notnull()
-            & np.isfinite(self.absolute_speed)
-        )
+        # Calculate speed leaving each point
+        speed_leaving = self.absolute_speed.shift(N_MEASUREMENTS=-1)
+
+        # Spike Detection: isolated bad fixes have impossible speeds arriving AND leaving
+        is_spike = (self.absolute_speed > 3.0) & (speed_leaving > 3.0)
+
+        # Ensure the final point is flagged if it arrives too fast 
+        is_spike = xr.where(speed_leaving.isnull() & (self.absolute_speed > 3.0), True, is_spike)
+
+        speed_is_valid = ~is_spike & self.absolute_speed.notnull() & np.isfinite(self.absolute_speed)
 
         flag_values = xr.where(speed_is_valid, 1, 4)
 
@@ -93,35 +94,60 @@ class impossible_speed_qc(BaseQC):
 
     def plot_diagnostics(self):
         matplotlib.use("tkagg")
-        fig, ax = plt.subplots(figsize=(8, 6), dpi=200)
+        
+        fig, axs = plt.subplots(nrows=3, figsize=(7, 6), sharex=True, dpi=200)
 
         time_vals = self.data["TIME"].values
         abs_speed_vals = self.absolute_speed.values
+        lat_vals = self.data["LATITUDE"].values
+        lon_vals = self.data["LONGITUDE"].values
 
-        for i in range(10):
-            # Plot by flag number
-            mask = self.flags["LATITUDE_QC"] == i
-            if not mask.any():
-                continue
+        mask_flag1 = (self.flags["LATITUDE_QC"] == 1).values
+        mask_flag4 = (self.flags["LATITUDE_QC"] == 4).values
+        
+        count_flag1 = np.sum(mask_flag1)
+        count_flag4 = np.sum(mask_flag4)
 
-            # Plot the data
-            ax.plot(
-                time_vals[mask.values],
-                abs_speed_vals[mask.values],
-                c=flag_cols[i],
-                ls="",
-                marker="o",
-                label=f"{i}",
-            )
-
-        ax.set(
-            title="Impossible Speed Test",
-            xlabel="Time (s)",
-            ylabel="Absolute Horizontal Speed (m/s)",
-            ylim=(0, 4),
+        # Plot 1: Absolute Speed
+        axs[0].plot(time_vals, abs_speed_vals, c="teal", lw=0.5, zorder=1, label="Raw Speed (m/s)")
+        max_speed = np.nanmax(abs_speed_vals)
+        y_max = 20.0 if max_speed > 20.0 else max(4.0, max_speed * 1.1)
+        axs[0].set(
+            title="Impossible Speed Test Diagnostics",
+            ylabel="Speed (m/s)",
+            ylim=(0, y_max),
         )
-        ax.axhline(3, ls="--", c="k")
-        ax.legend(title="Flags", loc="upper right")
+        axs[0].axhline(3, ls="--", c="magenta", lw=1, label="Threshold (3m/s)")
+        axs[0].legend(loc="upper right", fontsize="small")
+
+        # Plot 2: Latitude over time
+        axs[1].plot(
+            time_vals[mask_flag1], lat_vals[mask_flag1], 
+            c="teal", ls="", marker="o", markersize=1.5, label=f"Flag 1 (N={count_flag1})"
+        )
+        if count_flag4 > 0:
+            axs[1].plot(
+                time_vals[mask_flag4], lat_vals[mask_flag4], 
+                c="magenta", ls="", marker="o", markersize=1.5, label=f"Flag 4 (N={count_flag4})"
+            )
+        axs[1].set(ylabel="Latitude")
+        axs[1].legend(loc="upper right", fontsize="small")
+
+        # Plot 3: Longitude over time
+        axs[2].plot(
+            time_vals[mask_flag1], lon_vals[mask_flag1], 
+            c="teal", ls="", marker="o", markersize=1.5, label=f"Flag 1 (N={count_flag1})"
+        )
+        if count_flag4 > 0:
+            axs[2].plot(
+                time_vals[mask_flag4], lon_vals[mask_flag4], 
+                c="magenta", ls="", marker="o", markersize=1.5, label=f"Flag 4 (N={count_flag4})"
+            )
+        axs[2].set(
+            xlabel="Time (s)",
+            ylabel="Longitude",
+        )
+        axs[2].legend(loc="upper right", fontsize="small")
 
         fig.tight_layout()
         plt.show(block=True)
