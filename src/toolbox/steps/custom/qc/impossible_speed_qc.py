@@ -21,7 +21,6 @@ from toolbox.steps.base_qc import BaseQC, register_qc, flag_cols
 
 #### Custom imports ####
 import matplotlib.pyplot as plt
-import pandas as pd
 import xarray as xr
 import numpy as np
 import matplotlib
@@ -42,23 +41,20 @@ class impossible_speed_qc(BaseQC):
     qc_outputs = ["TIME_QC", "LATITUDE_QC", "LONGITUDE_QC"]
 
     def return_qc(self):
-        # Convert to pandas
-        self.df = self.data[self.required_variables].to_dataframe()
-
         # Get time difference in seconds safely
-        self.df["dt"] = self.df["TIME"].diff().dt.total_seconds()
+        dt = (self.data["TIME"] - self.data["TIME"].shift(N_MEASUREMENTS=1)) / np.timedelta64(1, "s")
 
         # Interpolate missing or infinite coordinates
-        for label in ["LATITUDE", "LONGITUDE"]:
-            self.df[label] = self.df[label].replace([np.inf, -np.inf], np.nan).interpolate()
+        lat = self.data["LATITUDE"].where(np.isfinite(self.data["LATITUDE"])).interpolate_na(dim="N_MEASUREMENTS")
+        lon = self.data["LONGITUDE"].where(np.isfinite(self.data["LONGITUDE"])).interpolate_na(dim="N_MEASUREMENTS")
 
         # Convert coordinates to radians for Haversine calculation
-        lat_rad = np.radians(self.df["LATITUDE"])
-        lon_rad = np.radians(self.df["LONGITUDE"])
+        lat_rad = np.radians(lat)
+        lon_rad = np.radians(lon)
         
         # Shift to get previous coordinates
-        prev_lat_rad = lat_rad.shift(1)
-        prev_lon_rad = lon_rad.shift(1)
+        prev_lat_rad = lat_rad.shift(N_MEASUREMENTS=1)
+        prev_lon_rad = lon_rad.shift(N_MEASUREMENTS=1)
         
         # Haversine formula
         a = (
@@ -68,30 +64,27 @@ class impossible_speed_qc(BaseQC):
         )
         
         # Radius of Earth is approx 6371000 metres
-        self.df["distance_m"] = 6371000.0 * 2 * np.arcsin(np.sqrt(a))
+        distance_m = 6371000.0 * 2 * np.arcsin(np.sqrt(a))
 
         # Calculate absolute speed in metres per second
-        self.df["absolute_speed"] = self.df["distance_m"] / self.df["dt"]
+        self.absolute_speed = distance_m / dt
 
         # First row will be NaN because there is no previous point to calculate speed.
         # We fill the first NaN with 0.0 so it passes the valid speed check.
-        self.df["absolute_speed"] = self.df["absolute_speed"].fillna(0.0)
+        self.absolute_speed = self.absolute_speed.fillna(0.0)
 
         # TODO: Does this need a flag for potentially bad data for cases where speed is inf?
         speed_is_valid = (
-            (self.df["absolute_speed"] < 3.0)  #  Speed threshold
-            & self.df["absolute_speed"].notna()
-            & np.isfinite(self.df["absolute_speed"])
+            (self.absolute_speed < 3.0)  #  Speed threshold
+            & self.absolute_speed.notnull()
+            & np.isfinite(self.absolute_speed)
         )
 
-        for label in ["LATITUDE", "LONGITUDE", "TIME"]:
-            self.df[f"{label}_QC"] = np.where(speed_is_valid, 1, 4)
+        flag_values = xr.where(speed_is_valid, 1, 4)
 
-        # Convert back to xarray
-        flags = self.df[[f"{col}_QC" for col in self.required_variables]]
         self.flags = xr.Dataset(
             data_vars={
-                col: ("N_MEASUREMENTS", flags[col].values) for col in flags.columns
+                col + "_QC": ("N_MEASUREMENTS", flag_values.values) for col in self.required_variables
             },
             coords={"N_MEASUREMENTS": self.data["N_MEASUREMENTS"]},
         )
@@ -102,16 +95,19 @@ class impossible_speed_qc(BaseQC):
         matplotlib.use("tkagg")
         fig, ax = plt.subplots(figsize=(8, 6), dpi=200)
 
+        time_vals = self.data["TIME"].values
+        abs_speed_vals = self.absolute_speed.values
+
         for i in range(10):
             # Plot by flag number
-            plot_data = self.df[self.df["LATITUDE_QC"] == i]
-            if plot_data.empty:
+            mask = self.flags["LATITUDE_QC"] == i
+            if not mask.any():
                 continue
 
             # Plot the data
             ax.plot(
-                plot_data["TIME"],
-                plot_data["absolute_speed"],
+                time_vals[mask.values],
+                abs_speed_vals[mask.values],
                 c=flag_cols[i],
                 ls="",
                 marker="o",

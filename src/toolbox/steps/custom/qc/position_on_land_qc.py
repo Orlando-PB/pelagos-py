@@ -23,7 +23,6 @@ from toolbox.steps.base_qc import BaseQC, register_qc, flag_cols
 from geodatasets import get_path
 import matplotlib.pyplot as plt
 import shapely as sh
-import pandas as pd
 import numpy as np
 import xarray as xr
 import matplotlib
@@ -45,9 +44,6 @@ class position_on_land_qc(BaseQC):
     qc_outputs = ["LATITUDE_QC", "LONGITUDE_QC"]
 
     def return_qc(self):
-        # Convert to pandas
-        self.df = self.data[self.required_variables].to_dataframe()
-
         # Concat the polygons into a MultiPolygon object
         self.world = geopandas.read_file(get_path("naturalearth.land"))
         land_polygons = sh.ops.unary_union(self.world.geometry)
@@ -56,21 +52,16 @@ class position_on_land_qc(BaseQC):
         # shapely.contains_xy evaluates arrays quickly and returns a boolean array
         on_land_mask = sh.contains_xy(
             land_polygons, 
-            self.df["LONGITUDE"].values, 
-            self.df["LATITUDE"].values
+            self.data["LONGITUDE"].values, 
+            self.data["LATITUDE"].values
         )
 
         # Apply flags: True (on land) -> 4, False (in water) -> 1
-        self.df["LONGITUDE_QC"] = np.where(on_land_mask, 4, 1)
-        
-        # Add the flags to LATITUDE as well.
-        self.df["LATITUDE_QC"] = self.df["LONGITUDE_QC"]
+        flag_values = np.where(on_land_mask, 4, 1)
 
-        # Convert back to xarray
-        flags = self.df[[f"{col}_QC" for col in self.required_variables]]
         self.flags = xr.Dataset(
             data_vars={
-                col: ("N_MEASUREMENTS", flags[col].values) for col in flags.columns
+                f"{col}_QC": ("N_MEASUREMENTS", flag_values) for col in self.required_variables
             },
             coords={"N_MEASUREMENTS": self.data["N_MEASUREMENTS"]},
         )
@@ -86,14 +77,14 @@ class position_on_land_qc(BaseQC):
 
         for i in range(10):
             # Plot by flag number
-            plot_data = self.df[self.df["LATITUDE_QC"] == i]
-            if plot_data.empty:
+            mask = self.flags["LATITUDE_QC"] == i
+            if not mask.any():
                 continue
 
             # Plot the data
             ax.plot(
-                plot_data["LONGITUDE"],
-                plot_data["LATITUDE"],
+                self.data["LONGITUDE"].values[mask.values],
+                self.data["LATITUDE"].values[mask.values],
                 c=flag_cols[i],
                 ls="",
                 marker="o",
