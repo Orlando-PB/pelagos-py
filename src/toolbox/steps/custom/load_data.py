@@ -32,7 +32,7 @@ class LoadOG1(BaseStep):
     Parameters
     ----------
     filter_bad_time : bool, optional
-        If True, REMOVES all timestamps outside the expected time window.
+        If True (default), REMOVES all timestamps outside the expected time window.
     data_start : str or np.datetime64, optional
         The minimum valid timestamp for the data. If not provided, the filter defaults to the DEPLOYMENT_TIME found in the dataset, or 1990-01-01T00:00:00 if no deployment time is found.
     data_end : str or np.datetime64, optional
@@ -43,7 +43,7 @@ class LoadOG1(BaseStep):
       - name: Load OG1
         parameters:
           file_path: "/path/to/your/dataset.nc"
-          filter_bad_time: true
+          filter_bad_time: false
           data_start: "2023-05-01T00:00:00"
           data_end: "2024-05-01T00:00:00"
     """
@@ -53,7 +53,7 @@ class LoadOG1(BaseStep):
     provided_variables = ["TIME", "LATITUDE", "LONGITUDE", "PRES", "TEMP", "CNDC"]
 
     def __init__(
-        self, filter_bad_time=False, data_start=None, data_end=None, *args, **kwargs
+        self, filter_bad_time=True, data_start=None, data_end=None, *args, **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.filter_bad_time = filter_bad_time
