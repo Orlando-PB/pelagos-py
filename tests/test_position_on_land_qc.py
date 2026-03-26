@@ -35,7 +35,7 @@ def test_locations(lats, lons, expected_flags):
 
 @patch("toolbox.steps.custom.qc.position_on_land_qc.plt.show")
 def test_plot_diagnostics(mock_show):
-    data = create_mock_dataset(lats=TEST_WATER_LATS, lons=TEST_WATER_LONS)
+    data = create_mock_dataset(lats=[0.0, -23.7], lons=[-30.0, 133.8])
     qc_step = position_on_land_qc(data)
     
     qc_step.return_qc()
