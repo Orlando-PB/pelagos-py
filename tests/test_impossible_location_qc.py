@@ -32,7 +32,7 @@ def test_locations(lats, lons, expected_lat, expected_lon):
 
 @patch("toolbox.steps.custom.qc.impossible_location_qc.plt.show")
 def test_plot_diagnostics(mock_show):
-    data = create_mock_dataset(lats=TEST_GOOD_LATS, lons=TEST_GOOD_LONS)
+    data = create_mock_dataset(lats=[45.0, -89.9], lons=[179.9, -179.9])
     qc_step = impossible_location_qc(data)
     
     qc_step.return_qc()
