@@ -163,7 +163,7 @@ class ApplyQC(BaseStep):
         for test in queued_qc:
             if hasattr(test, "dynamic"):
                 # Initialise the test to check its dynamic attributes
-                test_instance = test(None, **self.qc_settings[test.qc_name])
+                test_instance = test(data, **self.qc_settings[test.qc_name])
                 all_required_variables.update(test_instance.required_variables)
                 test_qc_outputs_cols.update(test_instance.qc_outputs)
                 del test_instance

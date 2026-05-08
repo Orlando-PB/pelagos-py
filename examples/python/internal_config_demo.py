@@ -60,7 +60,7 @@ steps:
     diagnostics: false
 
   - name: Find Profiles
-    diagnostics: false
+    diagnostics: true
 
   - name: Apply QC
     parameters:
