@@ -24,6 +24,7 @@ from geodatasets import get_path
 import matplotlib.pyplot as plt
 import shapely as sh
 import numpy as np
+import polars as pl
 import xarray as xr
 import matplotlib
 import geopandas
