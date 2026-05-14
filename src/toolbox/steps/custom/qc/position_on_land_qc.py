@@ -55,18 +55,34 @@ class position_on_land_qc(BaseQC):
         land_polygons = sh.ops.unary_union(self.world.geometry)
 
         # Check if lat, long coords fall within the area of the land polygons
-        # shapely.contains_xy evaluates arrays quickly and returns a boolean array
-        on_land_mask = sh.contains_xy(
-            land_polygons, 
-            self.data["LONGITUDE"].values, 
-            self.data["LATITUDE"].values
+        self.df = self.df.with_columns(
+            pl.when(pl.col("LONGITUDE").is_nan() | pl.col("LATITUDE").is_nan())
+            .then(9)
+            .otherwise(
+                pl.struct("LONGITUDE", "LATITUDE")
+                .map_batches(
+                    lambda x: sh.contains_xy(
+                        land_polygons,
+                        x.struct.field("LONGITUDE").to_numpy(),
+                        x.struct.field("LATITUDE").to_numpy(),
+                    )
+                    * 4
+                )
+                .replace({0: 1})
+            )
+            .alias("LONGITUDE_QC")
         )
+        # Add the flags to LATITUDE as well.
+        self.df = self.df.with_columns(pl.col("LONGITUDE_QC").alias("LATITUDE_QC"))
 
-        # Apply flags: True (on land) -> 4, False (in water) -> 1
-        flag_values = np.where(on_land_mask, 4, 1)
-
-        for col in ["LATITUDE", "LONGITUDE"]:
-            self.flags[f"{col}_QC"] = ("N_MEASUREMENTS", flag_values)
+        # Convert back to xarray
+        flags = self.df.select(pl.col("^.*_QC$"))
+        self.flags = xr.Dataset(
+            data_vars={
+                col: ("N_MEASUREMENTS", flags[col].to_numpy()) for col in flags.columns
+            },
+            coords={"N_MEASUREMENTS": self.data["N_MEASUREMENTS"]},
+        )
 
         return self.flags
 

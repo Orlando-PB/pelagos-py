@@ -14,16 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Class definition for loading data steps."""
-
-#### Mandatory imports ####
 from toolbox.steps.base_step import BaseStep, register_step
 import toolbox.utils.diagnostics as diag
 
-#### Custom imports ####
 import xarray as xr
 import pandas as pd
 import numpy as np
+from pathlib import Path
 
 MIN_YEAR_FILTER = "1990-01-01"
 
@@ -141,10 +138,10 @@ class LoadOG1(BaseStep):
                 "If TIME is listed under another name, please rename it to conform to the OG1 format."
             )
 
-        # Check that the "TIME" variable is monotonic and nanless
-        if np.any(np.isnan(self.data["TIME"])):
+        # Check that the "TIME" variable is monotonic and has no missing values
+        if np.any(np.isnat(self.data["TIME"].values)):
             raise ValueError(
-                "\n'TIME' has nan values. Pipelines cannot be run without a continuous monotonic time coordinate.\n"
+                "\n'TIME' has NaT values. Pipelines cannot be run without a continuous monotonic time coordinate.\n"
                 "Please remove these values (and their concurrent measurements) from the input."
             )
 
@@ -155,10 +152,13 @@ class LoadOG1(BaseStep):
             )
             
         # Generate diagnostics if enabled
+
+        self.log(f"Loaded data from {self.file_path}")
+        self.context["global_parameters"]["filename_core"] = Path(self.file_path).stem  #   Make this available to other steps
+
         if self.diagnostics:
             self.generate_diagnostics()
 
-        # add data to context
         self.context["data"] = self.data
         return self.context
 
