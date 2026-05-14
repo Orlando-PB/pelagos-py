@@ -22,7 +22,6 @@ steps:
         impossible date qc: {}
         impossible location qc: {}
         position on land qc: {}
-        ctd qc: {}
     diagnostics: false
 
   - name: Apply QC
@@ -60,7 +59,7 @@ steps:
     diagnostics: false
 
   - name: Find Profiles
-    diagnostics: true
+    diagnostics: false
 
   - name: Apply QC
     parameters:
