@@ -20,6 +20,7 @@
 from ..base_step import BaseStep, register_step
 import toolbox.utils.diagnostics as diag
 from toolbox.steps import QC_CLASSES
+from toolbox.utils.qc_handling import QC_COMBINATRIX
 
 #### Custom imports ####
 import xarray as xr
@@ -65,29 +66,12 @@ class ApplyQC(BaseStep):
             Dataset containing new QC flag variables to be merged into the existing flag store.
         """
 
-        # Define combinatrix for handling flag upgrade behaviour
-        qc_combinatrix = np.array(
-            [
-                [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-                [1, 1, 2, 3, 4, 5, 1, 1, 8, 9],
-                [2, 2, 2, 3, 4, 5, 2, 2, 8, 9],
-                [3, 3, 3, 3, 4, 3, 3, 3, 3, 9],
-                [4, 4, 4, 4, 4, 4, 4, 4, 4, 9],
-                [5, 5, 5, 3, 4, 5, 5, 5, 8, 9],
-                [6, 1, 2, 3, 4, 5, 6, 6, 8, 9],
-                [7, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-                [8, 8, 8, 3, 4, 8, 8, 8, 8, 9],
-                [9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
-            ],
-            dtype=np.int8
-        )
-
-        # Update existing flag columns
+        # Update existing flag columns using the shared ARGO combinatrix
         flag_columns_to_update = set(new_flags.data_vars) & set(
             self.flag_store.data_vars
         )
         for column_name in flag_columns_to_update:
-            self.flag_store[column_name][:] = qc_combinatrix[
+            self.flag_store[column_name][:] = QC_COMBINATRIX[
                 self.flag_store[column_name], new_flags[column_name]
             ]
 

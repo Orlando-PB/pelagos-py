@@ -74,20 +74,22 @@ def find_profiles(df_raw, depth_col, time_window_seconds, target_transect_phase,
     df = df.drop_duplicates(subset=["TIME"]).reset_index(drop=True)
 
     if df.empty:
-        df_raw["PROFILE_ID"] = np.nan
+        df_raw["PROFILE_NUMBER"] = np.nan
+        df_raw["PROFILE_DIRECTION"] = np.nan
         df_raw["GRADIENT"] = np.nan
         df_raw["CYCLE"] = 1
         df_raw["SCI_PHASE"] = 0
         return df_raw
 
     time_window_str = f"{time_window_seconds}s"
-    
+
     df.set_index("TIME", inplace=True)
     df = df.resample(time_window_str).mean().dropna(subset=[depth_col])
     df.reset_index(inplace=True)
 
     if df.empty:
-        df_raw["PROFILE_ID"] = np.nan
+        df_raw["PROFILE_NUMBER"] = np.nan
+        df_raw["PROFILE_DIRECTION"] = np.nan
         df_raw["GRADIENT"] = np.nan
         df_raw["CYCLE"] = 1
         df_raw["SCI_PHASE"] = 0
@@ -283,30 +285,81 @@ def find_profiles(df_raw, depth_col, time_window_seconds, target_transect_phase,
     mapped_df.drop(columns=["BIN_TIME"], inplace=True)
     mapped_df["SCI_PHASE"] = mapped_df["PHASE"]
 
-    # --- Generate Profile ID, Cycle, and Gradient ---
-    
-    is_profile = mapped_df["SCI_PHASE"].isin([1, 2, 4, 6])
-    profile_starts = is_profile & ~is_profile.shift(1, fill_value=False)
-    mapped_df["PROFILE_ID"] = profile_starts.cumsum()
-    mapped_df.loc[~is_profile, "PROFILE_ID"] = np.nan
+    # --- Generate Profile Number, Direction, Cycle, and Gradient ---
+
+    phases_arr = mapped_df["SCI_PHASE"].to_numpy()
+    n = len(phases_arr)
+
+    # Direction: -1 ascent, 1 descent, 0 transect-like, NaN otherwise
+    direction = np.full(n, np.nan)
+    direction[phases_arr == 1] = -1
+    direction[phases_arr == 2] = 1
+    direction[np.isin(phases_arr, [3, 4, 6])] = 0
+    mapped_df["PROFILE_DIRECTION"] = direction
+
+    # Profile number: each ascent/descent core block defines a profile, extended
+    # to include adjacent transects up to inflection/surfacing boundaries (or
+    # the midpoint of the inter-core span when no boundary marker is present).
+    core_mask = np.isin(phases_arr, [1, 2])
+    padded_core = np.concatenate(([False], core_mask, [False]))
+    c_starts = np.where(padded_core[1:] & ~padded_core[:-1])[0]
+    c_ends = np.where(~padded_core[1:] & padded_core[:-1])[0]  # exclusive
+    core_blocks = list(zip(c_starts, c_ends))
+
+    profile_num = np.full(n, np.nan)
+
+    if core_blocks:
+        boundaries = []  # inclusive last-index of each profile (except last)
+        for i in range(len(core_blocks) - 1):
+            end_i = core_blocks[i][1]
+            start_next = core_blocks[i + 1][0]
+            if start_next <= end_i:
+                boundaries.append(end_i - 1)
+                continue
+
+            region = np.arange(end_i, start_next)
+            region_phases = phases_arr[region]
+            infl = region[region_phases == 5]
+            surf = region[region_phases == 3]
+            if len(infl) > 0:
+                split = int(infl[-1])
+            elif len(surf) > 0:
+                split = int(surf[-1])
+            else:
+                split = (end_i + start_next - 1) // 2
+            boundaries.append(split)
+
+        prev_end = 0
+        for k in range(len(core_blocks)):
+            this_end = boundaries[k] + 1 if k < len(boundaries) else n
+            profile_num[prev_end:this_end] = k + 1
+            prev_end = this_end
+
+    # Surfacing rows are part of the cycle but not part of any profile.
+    profile_num[phases_arr == 3] = np.nan
+    mapped_df["PROFILE_NUMBER"] = profile_num
 
     surf_mask = mapped_df["SCI_PHASE"] == 3
     down_mask = mapped_df["SCI_PHASE"] == 2
     state_subset = mapped_df.loc[surf_mask | down_mask]
     is_new_cycle = (state_subset["SCI_PHASE"] == 2) & (state_subset["SCI_PHASE"].shift(1) == 3)
-    
+
     cycle_trigger = pd.Series(0, index=mapped_df.index)
     cycle_trigger.loc[state_subset[is_new_cycle].index] = 1
     mapped_df["CYCLE"] = cycle_trigger.cumsum() + 1
 
+    # Gradient: per-profile linear fit of depth vs time over the ascent/descent
+    # core rows only (transects would dilute the slope).
     mapped_df["GRADIENT"] = np.nan
-    
-    for pid, group in mapped_df.dropna(subset=["PROFILE_ID"]).groupby("PROFILE_ID"):
+    core_series = pd.Series(core_mask, index=mapped_df.index)
+    core_rows = mapped_df[core_series & mapped_df["PROFILE_NUMBER"].notna()]
+    for _, group in core_rows.groupby("PROFILE_NUMBER"):
         x = (group["TIME"] - group["TIME"].iloc[0]).dt.total_seconds().values
         y = group[depth_col].values
         if len(x) > 1:
             m, _ = np.polyfit(x, y, 1)
-            mapped_df.loc[group.index, "GRADIENT"] = m
+            pnum = group["PROFILE_NUMBER"].iloc[0]
+            mapped_df.loc[mapped_df["PROFILE_NUMBER"] == pnum, "GRADIENT"] = m
 
     mapped_df = mapped_df.sort_values("N_MEASUREMENTS").reset_index(drop=True)
     return mapped_df
@@ -321,7 +374,7 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
     
     step_name = "Find Profiles"
     required_variables = ["TIME"]
-    provided_variables = ["PROFILE_NUMBER", "CYCLE", "SCI_PHASE"]
+    provided_variables = ["PROFILE_NUMBER", "PROFILE_DIRECTION", "PROFILE_GRADIENT", "CYCLE", "SCI_PHASE"]
 
     parameter_schema = {
         "depth_column": {
@@ -435,13 +488,22 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics(df_final, depth_col)
 
-        self.data["PROFILE_NUMBER"] = (("N_MEASUREMENTS",), df_final["PROFILE_ID"].to_numpy())
+        self.data["PROFILE_NUMBER"] = (("N_MEASUREMENTS",), df_final["PROFILE_NUMBER"].to_numpy())
         self.data.PROFILE_NUMBER.attrs = {
             "long_name": "Derived profile number. NaN indicates no profile.",
             "units": "None",
             "standard_name": "Profile Number",
             "valid_min": 1,
             "valid_max": np.inf,
+        }
+
+        self.data["PROFILE_DIRECTION"] = (("N_MEASUREMENTS",), df_final["PROFILE_DIRECTION"].to_numpy())
+        self.data.PROFILE_DIRECTION.attrs = {
+            "long_name": "Profile direction: -1 ascent, 1 descent, 0 transect (surfacing/parking/propelled), NaN otherwise.",
+            "units": "None",
+            "standard_name": "Profile Direction",
+            "valid_min": -1,
+            "valid_max": 1,
         }
 
         self.data["PROFILE_GRADIENT"] = (("N_MEASUREMENTS",), df_final["GRADIENT"].to_numpy())
@@ -471,6 +533,7 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
 
         self.generate_qc({
             "PROFILE_NUMBER_QC": ["TIME_QC", f"{depth_col}_QC"],
+            "PROFILE_DIRECTION_QC": ["TIME_QC", f"{depth_col}_QC"],
             "PROFILE_GRADIENT_QC": ["TIME_QC", f"{depth_col}_QC"],
             "CYCLE_QC": ["TIME_QC", f"{depth_col}_QC"],
             "SCI_PHASE_QC": ["TIME_QC", f"{depth_col}_QC"]
@@ -508,7 +571,7 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
         ax1.grid(alpha=0.3)
 
         # Panel 2: Profile ID & Cycle
-        ax2.plot(mapped_df["TIME"], mapped_df["PROFILE_ID"], color="tab:blue", marker=".", ls="", ms=4, label="Profile ID")
+        ax2.plot(mapped_df["TIME"], mapped_df["PROFILE_NUMBER"], color="tab:blue", marker=".", ls="", ms=4, label="Profile Number")
         ax2.plot(mapped_df["TIME"], mapped_df["CYCLE"], color="tab:red", marker=".", ls="", ms=4, label="Cycle Number")
         ax2.set_ylabel("ID / Cycle")
         ax2.set_xlabel("Time")

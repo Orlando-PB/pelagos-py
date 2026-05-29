@@ -15,6 +15,7 @@
 # limitations under the License.
 """This module defines the base class for QC tests and a registry for QC test classes."""
 
+import copy
 import logging
 
 REGISTERED_QC = {}
@@ -74,14 +75,23 @@ class BaseQC:
         # Connect to the main pipeline logging hierarchy
         self.logger = logging.getLogger(f"toolbox.pipeline.qc.{self.qc_name.replace(' ', '_')}")
 
-        invalid_params = set(kwargs.keys()) - set(self.expected_parameters.keys())
+        # Resolve defaults from whichever source has been provided. Subclasses
+        # may set self.expected_parameters as an instance attribute before
+        # calling super().__init__() (e.g. ctd_qc builds it from a schema);
+        # otherwise fall back to the class-level default.
+        defaults = self.__dict__.get("expected_parameters", type(self).expected_parameters)
+
+        invalid_params = set(kwargs.keys()) - set(defaults.keys())
         if invalid_params:
             raise KeyError(
                 f"Unexpected parameters for {self.qc_name}: {invalid_params}"
             )
 
-        for k, v in kwargs.items():
-            self.expected_parameters[k] = v
+        # Build a per-instance copy so we never mutate the class-level dict.
+        # Deep-copying the defaults also avoids sharing nested mutables
+        # (e.g. the `{}` default for `also_flag`) across instances.
+        self.expected_parameters = copy.deepcopy(defaults)
+        self.expected_parameters.update(kwargs)
 
         for k, v in self.expected_parameters.items():
             setattr(self, k, v)

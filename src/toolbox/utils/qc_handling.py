@@ -20,6 +20,31 @@ import numpy as np
 import xarray as xr
 
 
+# ARGO flag combinatrix used to merge an existing flag with a new flag.
+# Indexed as QC_COMBINATRIX[existing, new]. See Wong et al. 2025 pp. 106
+# (http://dx.doi.org/10.13155/33951) and Mancini et al. 2021 pp. 43-44.
+QC_COMBINATRIX = np.array(
+    [
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        [1, 1, 2, 3, 4, 5, 1, 1, 8, 9],
+        [2, 2, 2, 3, 4, 5, 2, 2, 8, 9],
+        [3, 3, 3, 3, 4, 3, 3, 3, 3, 9],
+        [4, 4, 4, 4, 4, 4, 4, 4, 4, 9],
+        [5, 5, 5, 3, 4, 5, 5, 5, 8, 9],
+        [6, 1, 2, 3, 4, 5, 6, 6, 8, 9],
+        [7, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        [8, 8, 8, 3, 4, 8, 8, 8, 8, 9],
+        [9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+    ],
+    dtype=np.int8,
+)
+
+
+def merge_flags(existing, new):
+    """Merge two flag arrays via ``QC_COMBINATRIX`` so worse flags win."""
+    return QC_COMBINATRIX[np.asarray(existing, dtype=np.int8), np.asarray(new, dtype=np.int8)]
+
+
 class QCHandlingMixin:
     def __init__(self):
         # fetch user inputs
