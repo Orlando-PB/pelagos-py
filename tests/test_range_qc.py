@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 
-from toolbox.steps.custom.qc.range_qc import range_qc
+from pelagos_py.steps.custom.qc.range_qc import range_qc
 
 
 def _ds(**vars_):

@@ -4,7 +4,7 @@ import numpy as np
 import xarray as xr
 from unittest.mock import patch
 
-from toolbox.steps.custom.qc.ctd_qc import ctd_qc
+from pelagos_py.steps.custom.qc.ctd_qc import ctd_qc
 
 
 def create_ctd_dataset(pres=None, temp=None, cndc=None, cndc_units="S/m"):
@@ -156,8 +156,8 @@ def test_zero_not_reclassified_as_outlier():
 
 # --- Diagnostics ---
 
-@patch("toolbox.steps.custom.qc.ctd_qc.plt.show")
-@patch("toolbox.steps.custom.qc.ctd_qc.matplotlib.use")
+@patch("pelagos_py.steps.custom.qc.ctd_qc.plt.show")
+@patch("pelagos_py.steps.custom.qc.ctd_qc.matplotlib.use")
 def test_plot_diagnostics(mock_use, mock_show):
     data = create_ctd_dataset(
         pres=[5.0, 10.0],

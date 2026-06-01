@@ -18,9 +18,9 @@
 
 #### Mandatory imports ####
 from ..base_step import BaseStep, register_step
-import toolbox.utils.diagnostics as diag
-from toolbox.steps import QC_CLASSES
-from toolbox.utils.qc_handling import QC_COMBINATRIX
+import pelagos_py.utils.diagnostics as diag
+from pelagos_py.steps import QC_CLASSES
+from pelagos_py.utils.qc_handling import QC_COMBINATRIX
 
 #### Custom imports ####
 import xarray as xr

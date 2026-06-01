@@ -16,7 +16,7 @@
 
 """QC step that flags CTD fill values, corrects CNDC S/m to mS/cm, and applies a hard range filter."""
 
-from toolbox.steps.base_qc import BaseQC, register_qc
+from pelagos_py.steps.base_qc import BaseQC, register_qc
 import numpy as np
 import xarray as xr
 import matplotlib

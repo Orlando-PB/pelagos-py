@@ -3,7 +3,7 @@ import xarray as xr
 import numpy as np
 from unittest.mock import patch
 
-from toolbox.steps.custom.apply_qc import ApplyQC
+from pelagos_py.steps.custom.apply_qc import ApplyQC
 
 # Setup variables for easy tweaking
 MOCK_ATTRS = {
@@ -56,7 +56,7 @@ def test_sanitises_all_existing_qc_columns(apply_qc_step):
     })
     apply_qc_step.context = {"data": data}
 
-    with patch.dict("toolbox.steps.custom.apply_qc.QC_CLASSES", {"MockQC": MockQC}):
+    with patch.dict("pelagos_py.steps.custom.apply_qc.QC_CLASSES", {"MockQC": MockQC}):
         result = apply_qc_step.run()
 
     # Expected: valid numbers stay, everything else becomes 0
@@ -72,7 +72,7 @@ def test_initialises_all_missing_qc_columns(apply_qc_step):
     })
     apply_qc_step.context = {"data": data}
 
-    with patch.dict("toolbox.steps.custom.apply_qc.QC_CLASSES", {"MockQC": MockQC}):
+    with patch.dict("pelagos_py.steps.custom.apply_qc.QC_CLASSES", {"MockQC": MockQC}):
         result = apply_qc_step.run()
 
     # Expected: 0 for valid data points, 9 for missing data points

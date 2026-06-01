@@ -18,8 +18,8 @@
 
 #### Mandatory imports ####
 import numpy as np
-from toolbox.steps.base_qc import BaseQC, register_qc, flag_cols
-from toolbox.utils.qc_handling import merge_flags
+from pelagos_py.steps.base_qc import BaseQC, register_qc, flag_cols
+from pelagos_py.utils.qc_handling import merge_flags
 
 #### Custom imports ####
 import matplotlib.pyplot as plt

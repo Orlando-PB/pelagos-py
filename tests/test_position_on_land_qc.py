@@ -10,10 +10,11 @@ from utils.test_utils import create_mock_dataset
 def test_missing_variables():
     data = xr.Dataset({"TEMP": ("N_MEASUREMENTS", [10.0, 12.0])})
     qc_step = position_on_land_qc(data)
-    
-    # We expect the step to raise a KeyError because LATITUDE and LONGITUDE are missing
-    with pytest.raises(KeyError):
-        qc_step.return_qc()
+
+    # Step should skip gracefully and return an empty flags Dataset.
+    flags = qc_step.return_qc()
+    assert "LATITUDE_QC" not in flags
+    assert "LONGITUDE_QC" not in flags
 
 
 @pytest.mark.parametrize(

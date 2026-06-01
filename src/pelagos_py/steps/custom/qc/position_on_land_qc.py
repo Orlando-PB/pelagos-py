@@ -51,6 +51,11 @@ class position_on_land_qc(BaseQC):
             self.log_warn("LATITUDE or LONGITUDE missing. Skipping position on land qc.")
             return self.flags
 
+        # Convert to polars
+        self.df = pl.from_pandas(
+            self.data[["LATITUDE", "LONGITUDE"]].to_dataframe(), nan_to_null=False
+        )
+
         # Concat the polygons into a MultiPolygon object
         self.world = geopandas.read_file(get_path("naturalearth.land"))
         land_polygons = sh.ops.unary_union(self.world.geometry)
