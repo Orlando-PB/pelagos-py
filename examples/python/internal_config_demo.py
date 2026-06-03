@@ -2,7 +2,7 @@ import yaml
 from pelagos_py.pipeline import Pipeline, _setup_logging
 
 # --- Configuration Variables ---
-INPUT_FILE = "/Users/orlpru/Desktop/OG1_Data/input/BIO-Carbon/Cabot_645.nc"
+INPUT_FILE = "/Users/orlpru/Desktop/Run_Pipeline/input/CUSTARD/Churchill_501_R.nc"
 
 BASE_CONFIG_YAML = """
 pipeline:
@@ -59,7 +59,7 @@ steps:
     diagnostics: false
 
   - name: Find Profiles
-    diagnostics: false
+    diagnostics: true
 
   - name: Apply QC
     parameters:

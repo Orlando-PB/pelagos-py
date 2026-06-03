@@ -22,10 +22,33 @@ from pelagos_py.utils.qc_handling import QCHandlingMixin
 import pelagos_py.utils.diagnostics as diag
 import polars as pl
 import matplotlib.pyplot as plt
-import matplotlib as mpl
-import tkinter as tk
+import matplotlib.dates as mdates
 import numpy as np
 import re
+
+
+# Phase colours and names, matched to the standard find_profiles diagnostics
+PHASE_COLOURS = {
+    0: "#9ca3af",
+    1: "#22c55e",
+    2: "#3b82f6",
+    3: "#f97316",
+    4: "#a855f7",
+    5: "#06b6d4",
+    6: "#ef4444",
+    7: "#eab308",
+}
+
+PHASE_NAMES = {
+    0: "0 Unknown",
+    1: "1 Ascent",
+    2: "2 Descent",
+    3: "3 Surfacing",
+    4: "4 Parking",
+    5: "5 Inflection",
+    6: "6 Propelled",
+    7: "7 Transition",
+}
 
 
 def _parse_duration_to_kwargs(duration: str) -> dict:
@@ -340,7 +363,7 @@ def _extract_profiles(phases):
 
 def find_profiles(
     df,
-    gradient_thresholds: list,
+    gradient_thresholds: list = [0.05, -0.05],
     filter_win_sizes=["20s", "10s"],
     time_col="TIME",
     depth_col="DEPTH",
@@ -348,7 +371,7 @@ def find_profiles(
     transect_depth_range=[10.0],
     transect_depth_bottom_limits=None,
     cust_col=None,
-    cust_gradient_thresholds=[0, -0.025],
+    cust_gradient_thresholds=[0.005, -0.005],
     surface_depth=2.5,
     propelled_min_duration="1m",
 ):
@@ -376,10 +399,9 @@ def find_profiles(
     ----------
     df : polars.DataFrame
         Input dataframe containing time and depth measurements
-    gradient_thresholds : list
+    gradient_thresholds : list, default=[0.05, -0.05]
         Two-element list [positive_threshold, negative_threshold] defining the vertical velocity
-        range (in meters/second) that is NOT considered part of a profile. Typical values are
-        around [0.02, -0.02]
+        range (in meters/second) that is NOT considered part of a profile.
     filter_win_sizes : list, default=['20s', '10s']
         Window sizes for the compound filter applied to gradient calculations, in Polars duration
         format. Index 0 controls the rolling median window size and index 1 controls the rolling
@@ -402,7 +424,7 @@ def find_profiles(
         Name of an additional data column (e.g. 'pitch') to be used for phase classification
         and/or diagnostics plotting. When set to 'pitch', phase detection uses the combined
         -(pitch * velocity) criterion alongside velocity.
-    cust_gradient_thresholds : list, default=[0.005, -0.025]
+    cust_gradient_thresholds : list, default=[0.005, -0.005]
         Two-element list [positive_threshold, negative_threshold] for the combined-criterion
         phase detection (only used when cust_col='pitch').
     surface_depth : float, default=2.5
@@ -631,7 +653,7 @@ def find_profiles(
 @register_step
 class FindProfilesStep(BaseStep, QCHandlingMixin):
 
-    step_name = "Find Profiles"
+    step_name = "Find Profiles Pitch"
     required_variables = ["TIME"]
     provided_variables = ["PROFILE_NUMBER", "PROFILE_DIR", "PHASE_SCI"]
 
@@ -640,17 +662,14 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
 
         self.filter_qc()
 
-        self.thresholds = self.parameters["gradient_thresholds"]
-        self.win_sizes = self.parameters["filter_window_sizes"]
-        self.depth_col = self.parameters["depth_column"]
+        # All parameters fall back to presets so the step can run with no config input
+        self.thresholds = self.parameters.get("gradient_thresholds", [0.05, -0.05])
+        self.cust_thresholds = self.parameters.get("custom_gradient_thresholds", [0.005, -0.005])
+        self.win_sizes = self.parameters.get("filter_window_sizes", ["20s", "10s"])
+        self.depth_col = self.parameters.get("depth_column", "PRES")
         self.cust_col = self.parameters.get("custom_column", None)
         self.surface_depth = self.parameters.get("surface_depth", 2.5)
         self.propelled_min_duration = self.parameters.get("propelled_min_duration", "1m")
-
-        if self.diagnostics:
-            self.log("Generating diagnostics")
-            root = self.generate_diagnostics()
-            root.mainloop()
 
         # Convert to polars for processing
         cols = ["TIME", self.depth_col] + ([self.cust_col] if self.cust_col else [])
@@ -660,9 +679,15 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
         self.profile_outputs = find_profiles(
             self._df, self.thresholds, self.win_sizes,
             depth_col=self.depth_col, cust_col=self.cust_col,
+            cust_gradient_thresholds=self.cust_thresholds,
             surface_depth=self.surface_depth,
             propelled_min_duration=self.propelled_min_duration,
         )
+
+        if self.diagnostics:
+            self.log("Generating diagnostics")
+            self.generate_diagnostics()
+
         profile_numbers = self.profile_outputs["profile_num"].to_numpy()
 
         # Add profile numbers to data and update context
@@ -720,180 +745,89 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
         return self.context
 
     def generate_diagnostics(self):
+        """Render a single static diagnostic figure, coloured by science phase.
 
-        def generate_plot():
-            # Allows interactive plots
-            mpl.use("TkAgg")
+        Three stacked panels share a time axis:
+          0. interpolated depth, plotted as -depth so the ocean surface (0) sits at
+             the top and increasing depth runs downward;
+          1. vertical velocity with the velocity thresholds and, where pitch is used,
+             the combined -(pitch x velocity) signal with its own pitch thresholds;
+          2. derived profile number.
+        """
+        outputs = self.profile_outputs
+        depth_col = self.depth_col
 
-            # Update data for plot
-            cols = ["TIME", self.depth_col] + ([self.cust_col] if self.cust_col else [])
-            self._df = pl.from_pandas(
-                self.data[cols].to_dataframe(), nan_to_null=False
+        # Padding/rebuild in find_profiles returns TIME as epoch-nanosecond floats;
+        # recover datetimes (NaN -> NaT) so the date axis formatter behaves.
+        time = outputs["TIME"].to_numpy().astype("datetime64[ns]")
+        phase = outputs["PHASE_SCI"].to_numpy()
+        neg_depth = -outputs[f"INTERP_{depth_col}"].to_numpy()
+        grad = outputs["grad"].to_numpy()
+        smooth_grad = outputs["smooth_grad"].to_numpy()
+        profile_num = outputs["profile_num"].to_numpy()
+        has_pit_vel = "pit_vel" in outputs.columns
+        pit_vel = outputs["pit_vel"].to_numpy() if has_pit_vel else None
+
+        fig, axs = plt.subplots(
+            3, 1, figsize=(16, 9), height_ratios=[3, 3, 1], sharex=True,
+        )
+
+        # Panel 0: depth coloured by phase (surface at top, -depth descending)
+        for p_val in range(8):
+            mask = phase == p_val
+            n_points = int(mask.sum())
+            if n_points == 0:
+                continue
+            axs[0].plot(
+                time[mask], neg_depth[mask],
+                ls="none", marker=".", markersize=6,
+                color=PHASE_COLOURS.get(p_val, "black"),
+                label=f"{PHASE_NAMES.get(p_val, f'Phase {p_val}')} (n={n_points})",
+                zorder=6 if p_val == 5 else 3,
             )
-            self.profile_outputs = find_profiles(
-                self._df, self.thresholds, self.win_sizes,
-                depth_col=self.depth_col, cust_col=self.cust_col,
-                surface_depth=self.surface_depth,
-                propelled_min_duration=self.propelled_min_duration,
-            )
+        axs[0].set_ylabel(f"-{depth_col} (surface at top)")
+        axs[0].set_title("Find Profiles (Pitch) | Phase Mapping")
+        leg = axs[0].legend(loc="upper right", fontsize=9, markerscale=2.0, ncol=2)
+        leg.set_zorder(100)
+        axs[0].grid(alpha=0.3)
 
-            # Split data into profile and non-profile points for plotting
-            profiles = self.profile_outputs.filter(
-                pl.col("is_profile").cast(pl.Boolean)
-            )
-            not_profiles = self.profile_outputs.filter(
-                pl.col("is_profile").cast(pl.Boolean).not_()
-            )
-
-            n_rows = 4 if self.cust_col else 3
-            height_ratios = [3, 3, 1, 2] if self.cust_col else [3, 3, 1]
-            fig, axs = plt.subplots(
-                n_rows, 1, figsize=(18, 8 + (2 if self.cust_col else 0)),
-                height_ratios=height_ratios, sharex=True,
-            )
-            axs[0].set(xlabel="Time", ylabel="Interpolated Depth")
-            axs[1].set(xlabel="Time", ylabel="Vertical Velocity")
-            axs[2].set(xlabel="Time", ylabel="Profile Number")
-            if self.cust_col:
-                axs[3].set(xlabel="Time", ylabel=self.cust_col)
-            fig.tight_layout()
-
-            # Plot depth vs time, highlighting profile and non-profile points
-            for data, col, label in zip(
-                [profiles, not_profiles],
-                ["tab:blue", "tab:red"],
-                ["Profile", "Not Profile"],
-            ):
-                axs[0].plot(
-                    data["TIME"],
-                    -data[f"INTERP_{self.depth_col}"],
-                    marker=".",
-                    markersize=1,
-                    ls="",
-                    c=col,
-                    label=label,
-                )
-                axs[1].plot(
-                    data["TIME"],
-                    data["smooth_grad"],
-                    marker=".",
-                    markersize=1,
-                    ls="",
-                    c=col,
-                    label=label,
-                )
-
-            # Plot raw and smoothed gradients with threshold lines
+        # Panel 1: vertical velocity coloured by phase, with velocity thresholds and
+        # (when pitch is used) the combined pitch*velocity signal and its thresholds
+        axs[1].plot(time, grad, c="k", alpha=0.1, lw=0.8, label="Raw velocity")
+        for p_val in range(8):
+            mask = phase == p_val
+            if int(mask.sum()) == 0:
+                continue
             axs[1].plot(
-                self.profile_outputs["TIME"],
-                self.profile_outputs["grad"],
-                c="k",
-                alpha=0.1,
-                label="Raw Velocity",
+                time[mask], smooth_grad[mask],
+                ls="none", marker=".", markersize=4,
+                color=PHASE_COLOURS.get(p_val, "black"),
+                zorder=6 if p_val == 5 else 3,
             )
-            for val, label in zip(self.thresholds, ["Gradient Thresholds", None]):
-                axs[1].axhline(val, ls="--", color="gray", label=label)
-
-            # Plot profile numbers
-            axs[2].plot(
-                self.profile_outputs["TIME"],
-                self.profile_outputs["profile_num"],
-                c="gray",
+        for val, label in zip(self.thresholds, ["Velocity threshold", None]):
+            axs[1].axhline(val, ls="--", color="gray", lw=1, label=label)
+        if has_pit_vel:
+            axs[1].plot(
+                time, pit_vel, c="purple", alpha=0.5, lw=0.8,
+                label="-(pitch x velocity)",
             )
+            for val, label in zip(self.cust_thresholds, ["Pitch threshold", None]):
+                axs[1].axhline(val, ls=":", color="purple", lw=1, label=label)
+        axs[1].set_ylabel("Vertical velocity (m/s)")
+        axs[1].legend(loc="upper right", fontsize=9, ncol=2)
+        axs[1].grid(alpha=0.3)
 
-            # Plot custom column if provided
-            if self.cust_col and f"INTERP_{self.cust_col}" in self.profile_outputs.columns:
-                axs[3].plot(
-                    self.profile_outputs["TIME"],
-                    self.profile_outputs[f"INTERP_{self.cust_col}"],
-                    c="purple",
-                    marker=".",
-                    markersize=1,
-                    ls="",
-                    label=self.cust_col,
-                )
-                axs[3].legend(loc="upper right")
-
-            for ax in axs[:2]:
-                ax.legend(loc="upper right")
-            plt.show(block=False)
-
-        root = tk.Tk()
-        root.title("Parameter Adjustment")
-        root.geometry(f"380x{50*len(self.parameters)}")
-        entries = {}
-
-        # Gradient thresholds
-        row = 0
-        values = self.thresholds
-        tk.Label(root, text=f"Gradient Thresholds:").grid(row=row, column=0)
-        for i, label, value in zip(range(2), ["+ve", "-ve"], values):
-            tk.Label(root, text=f"{label}:").grid(row=row + 1, column=2 * i)
-            entry = tk.Entry(root, textvariable=label, width=10)
-            entry.insert(0, value)
-            entry.grid(row=row + 1, column=2 * i + 1)
-            entries[label] = entry
-
-        # Filter window sizes
-        row = 2
-        values = self.win_sizes
-        tk.Label(root, text=f"Filter Window Sizes:").grid(
-            row=row, column=0, pady=(20, 0)
+        # Panel 2: derived profile number
+        axs[2].plot(
+            time, profile_num,
+            c="tab:blue", marker=".", markersize=3, ls="", label="Profile number",
         )
-        for i, label, value in zip(range(2), ["Median Filter", "Mean Filter"], values):
-            tk.Label(root, text=f"{label}:").grid(row=row + 1, column=2 * i)
-            entry = tk.Entry(root, textvariable=label, width=10)
-            entry.insert(0, value)
-            entry.grid(row=row + 1, column=2 * i + 1)
-            entries[label] = entry
+        axs[2].set_ylabel("Profile #")
+        axs[2].set_xlabel("Time")
+        axs[2].legend(loc="upper left")
+        axs[2].grid(alpha=0.3)
 
-        # Depth column name
-        row = 4
-        value = self.depth_col
-        tk.Label(root, text=f"Depth column name:").grid(row=row, column=0, pady=(20, 0))
-        entry = tk.Entry(root, textvariable="depth_column")
-        entry.insert(0, value)
-        entry.grid(row=row, column=1, pady=(20, 0))
-        entries["depth_column"] = entry
-
-        def on_cancel():
-            plt.close('all')
-            root.quit()  # Stops the mainloop
-            root.destroy()  # Destroys the window
-
-        def on_regenerate():
-            # Update parameter attributes
-            self.thresholds = [float(entries["+ve"].get()), float(entries["-ve"].get())]
-            self.win_sizes = [
-                entries["Median Filter"].get(),
-                entries["Mean Filter"].get(),
-            ]
-            self.depth_col = entries["depth_column"].get()
-
-            # Regenerate data and plot it
-            plt.close('all')
-            generate_plot()
-
-        def on_save():
-            self.log(
-                f"continuing with parameters: \n"
-                f"  Gradient Thresholds: {self.thresholds}\n"
-                f"  Filter Window Sizes: {self.win_sizes}\n"
-                f"  Depth column: {self.depth_col}\n"
-            )
-            plt.close('all')
-            root.quit()  # Stops the mainloop
-            root.destroy()  # Destroys the window
-
-        tk.Button(root, text="Regenerate", command=on_regenerate).grid(
-            row=row + 1, column=0, pady=(20, 0)
-        )
-        tk.Button(root, text="Save", command=on_save).grid(
-            row=row + 1, column=1, pady=(20, 0)
-        )
-        tk.Button(root, text="Cancel", command=on_cancel).grid(
-            row=row + 1, column=2, pady=(20, 0)
-        )
-
-        generate_plot()
-        return root
+        axs[2].xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+        fig.autofmt_xdate()
+        fig.tight_layout()
+        plt.show(block=True)

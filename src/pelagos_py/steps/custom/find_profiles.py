@@ -552,19 +552,20 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
             
             if n_points > 0:
                 t_data = mapped_df["TIME"][mask]
-                depth_data = mapped_df[depth_col][mask]
+                # Plot as -depth so the ocean surface (0) sits at the top and
+                # increasing depth runs downward.
+                depth_data = -mapped_df[depth_col][mask]
             else:
                 t_data = []
                 depth_data = []
-                
+
             lbl = f"{PHASE_NAMES.get(p_val, f'Phase {p_val}')} (n={n_points})"
             z_ord = 6 if p_val == 5 else 3
-                
-            ax1.plot(t_data, depth_data, linestyle="none", marker=".", markersize=8, 
+
+            ax1.plot(t_data, depth_data, linestyle="none", marker=".", markersize=8,
                     color=PHASE_COLOURS.get(p_val, "black"), label=lbl, zorder=z_ord)
 
-        ax1.invert_yaxis()
-        ax1.set_ylabel("Pressure/Depth")
+        ax1.set_ylabel("-Pressure/Depth (surface at top)")
         ax1.set_title("Diagnostics | High Resolution Phase Mapping")
         leg = ax1.legend(loc="upper right", fontsize=10, markerscale=2.0)
         leg.set_zorder(100) 
