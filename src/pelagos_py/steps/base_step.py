@@ -112,7 +112,9 @@ class BaseStep(ConfigMirrorMixin):
     def update_parameters(self, **kwargs):
         """
         Update parameter values both in attributes and in private store.
-        Example:
+
+        Example::
+
             self.update_parameters(file_path='newfile.nc', add_meta=False)
         """
         for k, v in kwargs.items():

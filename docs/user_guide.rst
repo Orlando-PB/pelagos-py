@@ -54,8 +54,8 @@ painless as possible. This section explains how to add new **steps** and **QC
 checks**, including the base-class interfaces and how new functionality is
 registered so the pipeline can discover it.
 
-Templates are provided for both: copy :doc:`blank_step.py <api/src/pelagos_py/steps/custom/blank_step/index>`
-for a new step, or :doc:`blank_qc.py <api/src/pelagos_py/steps/custom/qc/blank_qc/index>`
+Templates are provided for both: copy :doc:`blank_step.py <api/pelagos_py/steps/custom/blank_step/index>`
+for a new step, or :doc:`blank_qc.py <api/pelagos_py/steps/custom/qc/blank_qc/index>`
 for a new QC check. It is still recommended that you read the instructions below
 to avoid common implementation issues.
 
@@ -131,7 +131,7 @@ How to add a new step
 
    There are already default methods for generating common diagnostics, such as
    time series and scatter plots. See the
-   :doc:`diagnostics documentation <api/src/pelagos_py/utils/diagnostics/index>`
+   :doc:`diagnostics documentation <api/pelagos_py/utils/diagnostics/index>`
    for more information.
 
 6. Add the step to your pipeline config file, using the ``step_name`` you defined
@@ -158,14 +158,14 @@ How to add a new step
    .. note::
       This is handled automatically by the ``BaseStep`` class. More information
       can be found in the
-      :doc:`BaseStep documentation <api/src/pelagos_py/steps/base_step/index>`.
+      :doc:`BaseStep documentation <api/pelagos_py/steps/base_step/index>`.
 
 Adding QC handling to a step
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Some users may want to filter out bad data before a processing step runs. This
 is implemented through the ``QCHandlingMixin`` (see
-:doc:`qc_handling.py <api/src/pelagos_py/utils/qc_handling/index>`). The pipeline
+:doc:`qc_handling.py <api/pelagos_py/utils/qc_handling/index>`). The pipeline
 preserves the original dataset dimensions, so filtered data is either replaced
 or reinserted once the step completes.
 
@@ -254,7 +254,7 @@ QC checks operate exclusively on the QC flags of the data variables. This is
 useful for researchers post-pipeline who want to remove bad or suspicious data,
 or to exclude bad data from specific processing steps (see
 `Adding QC handling to a step`_ above). All checks are run through the
-:doc:`Apply QC <api/src/pelagos_py/steps/custom/apply_qc/index>` step, which
+:doc:`Apply QC <api/pelagos_py/steps/custom/apply_qc/index>` step, which
 transfers the individual results onto the existing QC columns.
 
 As described on the :doc:`Quality Control <quality_control>` page, there are two types of
@@ -268,11 +268,11 @@ check:
 A standard structure for dynamic checks is yet to be settled, so this section
 covers only the implementation of static checks. Examples of dynamic checks can
 be found in
-:doc:`stuck_value_qc.py <api/src/pelagos_py/steps/custom/qc/stuck_value_qc/index>`
+:doc:`stuck_value_qc.py <api/pelagos_py/steps/custom/qc/stuck_value_qc/index>`
 and
-:doc:`impossible_range_qc.py <api/src/pelagos_py/steps/custom/qc/impossible_range_qc/index>`.
+:doc:`impossible_range_qc.py <api/pelagos_py/steps/custom/qc/impossible_range_qc/index>`.
 A template for a static check is provided in
-:doc:`blank_qc.py <api/src/pelagos_py/steps/custom/qc/blank_qc/index>`.
+:doc:`blank_qc.py <api/pelagos_py/steps/custom/qc/blank_qc/index>`.
 
 1. Create your QC file in ``src/pelagos_py/steps/custom/qc/``.
 

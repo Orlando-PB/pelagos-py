@@ -12,8 +12,27 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "pelagos-py"
 copyright = "2025, National Oceanography Centre"
 author = "National Oceanography Centre"
-version = "0.0.1"
-release = version
+
+# Single-source the version from setuptools-scm (i.e. the latest git tag).
+# ``release`` is the full version (e.g. "2.4.1.dev3+gabc1234"); ``version`` is
+# the short X.Y form shown in the docs. Both feed the |release| / |version|
+# substitutions used on the index page.
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _get_version
+
+try:
+    release = _get_version("pelagos_py")
+except PackageNotFoundError:
+    # Package not installed in the build env; read the version straight from
+    # the git tree so local `make html` still shows a real number.
+    try:
+        from setuptools_scm import get_version
+
+        release = get_version(root="..", relative_to=__file__)
+    except Exception:
+        release = "0.0.0+unknown"
+
+version = ".".join(release.split(".")[:2])
 
 # -- General configuration ------------------------------------------------
 
