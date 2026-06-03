@@ -17,9 +17,9 @@
 """Class definition for exporting data steps."""
 
 #### Mandatory imports ####
-from toolbox.steps.base_step import BaseStep, register_step
-from toolbox.utils.qc_handling import QCHandlingMixin
-import toolbox.utils.diagnostics as diag
+from pelagos_py.steps.base_step import BaseStep, register_step
+from pelagos_py.utils.qc_handling import QCHandlingMixin
+import pelagos_py.utils.diagnostics as diag
 import polars as pl
 import matplotlib.pyplot as plt
 import matplotlib as mpl
