@@ -29,25 +29,45 @@ import matplotlib
 @register_qc
 class flag_full_profile(BaseQC):
     """
-    Target Variable: Any
-    Flag Number: 4
-    Variables Flagged: Any
-    Checks the number of bad (4) flags per profile. If it
-    exceeds the user threshold then all points in the profile
-    are flagged.
+    Flag an entire profile once it accumulates too many bad measurements.
 
-    EXAMPLE
-    -------
-    ::
+    | **Target variable:** user-defined (dynamic)
+    | **Variables flagged:** the same user-defined variable(s)
+    | **Flag applied:** 4 (bad)
+
+    For each variable in ``check_vars``, the number of bad (4) flags in its ``_QC``
+    column is counted per profile (grouped by ``PROFILE_NUMBER``, as produced by
+    :doc:`Find Profiles <../processing/find_profiles/index>`). If a profile's count
+    reaches the variable's threshold, **every** measurement of that variable in the
+    profile is set to bad (4) — the rationale being that a profile riddled with bad
+    points is untrustworthy as a whole.
+
+    Each variable is evaluated independently against its own threshold, and only the
+    listed variables' ``_QC`` columns are modified.
+
+    Parameters
+    ----------
+    check_vars : dict
+        Mapping of variable name to an integer threshold, e.g.
+        ``{"PRES": 10, "CHLA": 20}``. A profile with at least that many bad (4) flags
+        in ``<variable>_QC`` has all of that variable's points flagged bad. Required;
+        each listed variable and its ``_QC`` column must be present in the dataset.
+
+    Examples
+    --------
+    Flag any profile that contains 10 or more bad pressure points (and, separately,
+    20 or more bad chlorophyll points):
+
+    .. code-block:: yaml
 
         - name: "Apply QC"
           parameters:
-            qc_settings: {
-                "flag_full_profile": {
-                  "check_vars": {"PRES": 10, "CHLA": 20},
-                }
-            }
-          diagnostics: true
+            qc_settings:
+              flag full profile:
+                check_vars:
+                  PRES: 10
+                  CHLA: 20
+          diagnostics: true  # plot each variable vs index, coloured by flag
     """
 
     qc_name = "flag full profile"

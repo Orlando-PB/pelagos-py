@@ -306,30 +306,55 @@ steps:
 # ------------------------------------------------------------------------------------------- Profile Finding -------------------------------------------------------------------------------------------
 
 # Find Profiles (src/pelagos_py/steps/processing/find_profiles.py):
-# Adds PROFILE_NUMBER to the data, grouping points using a vertical velocity thresholding method
+# Classifies each measurement into an OG1 scientific phase (SCI_PHASE) and derives
+# PROFILE_NUMBER, PROFILE_DIRECTION, PROFILE_GRADIENT and CYCLE. All parameters are
+# optional — the defaults shown below work out of the box, so `- name: "Find Profiles"`
+# on its own is a valid step.
   - name: "Find Profiles"
     parameters:
-      # [gradient_thresholds]:
-      #   Upper and lower limits for a gliders ascent/descent velocity (m/s). Consecutive groups of values that exceed these limits
-      #   are assigned a profile number. If velocity is within these limits (~0), this data is assigned a nan profile number.
-      gradient_thresholds: [0.033, -0.033]
-      # [filter_window_sizes]:
-      #   Window sizes to adjust smoothing of the vertical velocities. The values apply to ["median filter", "mean filter"]
-      filter_window_sizes: ["20s", "20s"]
       # [depth_column]:
-      #   Name of the column used to derive vertical velocities
-      depth_column: DEPTH
+      #   Depth or pressure column used for the analysis.
+      depth_column: PRES
+      # [time_window_seconds]:
+      #   Time window (seconds) used for resampling and smoothing of depth/velocity/acceleration.
+      time_window_seconds: 30
+      # [is_propelled]:
+      #   Target phase for near-horizontal transects: true -> propelled (6), false -> parking (4),
+      #   or "auto" to decide from the dataset `id` attribute ("ALR" -> propelled, else parking).
+      is_propelled: "auto"
+      # [velocity_threshold]:
+      #   Vertical velocity (m/s) above which a sample is flagged as ascent/descent.
+      velocity_threshold: 0.033
+      # [acceleration_threshold]:
+      #   Maximum absolute acceleration for a sample to count as a stable horizontal (transect) phase.
+      acceleration_threshold: 0.0005
+      # [transition_buffer_seconds]:
+      #   Buffer (seconds) trimmed from each end of a continuous ascent/descent/transect block.
+      transition_buffer_seconds: 30
+      # [min_duration_minutes]:
+      #   Minimum duration (minutes) for a phase block to be kept.
+      min_duration_minutes: 5
+      # [peak_prominence]:
+      #   Topographic prominence (depth units) a turning point must have to be flagged as an inflection.
+      peak_prominence: 20
+      # [min_samples_between_peaks]:
+      #   Minimum number of bins required between detected inflection peaks.
+      min_samples_between_peaks: 20
+      # [gap_threshold_minutes]:
+      #   A time gap longer than this (minutes) splits the record into disconnected chunks for inflection detection.
+      gap_threshold_minutes: 5
+      # [surface_depth]:
+      #   Depth (depth units) below which data is treated as general surface operation when searching for inflections.
+      surface_depth: 20
+      # [surfacing_threshold]:
+      #   Strict depth threshold below which inflection/transect points are reclassified as surfacing (phase 3).
+      surfacing_threshold: 5
+      # [parking_gradient_threshold]:
+      #   Absolute depth gradient (m/s) above which a drifting parking/propelled block is converted back to ascent/descent.
+      parking_gradient_threshold: 0.005
     # [diagnostics]:
-    #   If true, the pipeline will plot the profiling result and launch a tkinter window that will let the user adjust the
-    #   above parameters to produce the best profile-search criteria.
-    diagnostics: false
-
-# Find Profile Direction (src/pelagos_py/steps/processing/profile_direction.py):
-# Determines the profile direction based off of median vertical velocity
-  - name: "Find Profile Direction"
-    parameters:
-    # [diagnostics]:
-    #   Plots DEPTH-TIME with points coloured by direction
+    #   If true, plots a static two-panel figure: the phase classification (DEPTH-TIME
+    #   coloured by SCI_PHASE) and the derived PROFILE_NUMBER / CYCLE numbering.
     diagnostics: false
 
 
