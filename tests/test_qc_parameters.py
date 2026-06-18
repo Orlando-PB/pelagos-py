@@ -4,9 +4,8 @@ import logging
 
 import pytest
 
-from pelagos_py.steps.quality_control.impossible_range_qc import impossible_range_qc
+from pelagos_py.steps.quality_control.range_qc import range_qc
 from pelagos_py.steps.quality_control.spike_qc import spike_qc
-from pelagos_py.steps.quality_control.gross_range_qc import gross_range_qc
 from pelagos_py.steps.quality_control.impossible_date_qc import impossible_date_qc
 from pelagos_py.utils.valid_config_check import check_pipeline_variables
 
@@ -18,11 +17,10 @@ LOGGER = logging.getLogger("test")
 
 
 def test_dynamic_qc_derives_required_variables():
-    qc = impossible_range_qc(
+    qc = range_qc(
         None,
         variable_ranges={"PRES": {4: [-5, 0]}},
         also_flag={"PRES": ["CNDC"]},
-        plot=[],
     )
     assert qc.required_variables == ["PRES"]
     assert set(qc.qc_outputs) == {"PRES_QC", "CNDC_QC"}
@@ -37,10 +35,10 @@ def test_optional_params_get_defaults():
 
 
 def test_test_depth_range_adds_depth_requirement():
-    without = impossible_range_qc(None, variable_ranges={"PRES": {4: [-5, 0]}})
+    without = range_qc(None, variable_ranges={"PRES": {4: [-5, 0]}})
     assert "DEPTH" not in without.required_variables
 
-    with_range = impossible_range_qc(
+    with_range = range_qc(
         None, variable_ranges={"PRES": {4: [-5, 0]}}, test_depth_range=[-100, 0]
     )
     assert "DEPTH" in with_range.required_variables
@@ -48,7 +46,7 @@ def test_test_depth_range_adds_depth_requirement():
 
 def test_missing_required_param_raises():
     with pytest.raises(ValueError, match="variable_ranges"):
-        gross_range_qc(None, also_flag={})
+        range_qc(None, also_flag={})
 
 
 def test_unknown_param_raises():
@@ -66,7 +64,7 @@ def test_validator_flags_missing_required_step_param():
 
 
 def test_validator_flags_missing_required_qc_param():
-    steps = [{"name": "Apply QC", "parameters": {"qc_settings": {"gross range qc": {}}}}]
+    steps = [{"name": "Apply QC", "parameters": {"qc_settings": {"range qc": {}}}}]
     with pytest.raises(ValueError, match="variable_ranges"):
         check_pipeline_variables(steps, LOGGER)
 

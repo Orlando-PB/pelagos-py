@@ -31,9 +31,21 @@ steps:
       file_path: ../examples/data/OG1/Nelson_646_R.nc # Path to the input NetCDF file
     diagnostics: false
 
+# ----------------- CORRECT VALUES -----------------
+
+# Nelson data has incorrect units for CNDC, so we need to correct the values before proceeding with processing.
+  - name: Correct Values
+    parameters:
+      target_variable: CNDC
+      slope: 10.0
+      intercept: 0.0
+      expected_range: [20, 45]
+      corrected_units: mS/cm
+    diagnostics: false
+
 # ----------------- BASIC QC + INTERPOLATION ----------------
 
-# First, we apply basic testing on the coordinated varibales LATITUDE, LONGITUDE & TIME.
+# We apply basic testing on the coordinated varibales LATITUDE, LONGITUDE & TIME.
   - name: Apply QC
     parameters:
       qc_settings:
@@ -50,17 +62,23 @@ steps:
     parameters:
       qc_settings:
 
-        impossible range qc: # Checks for bad data within a given range
+        range qc: # Flags the whole CTD triad (PRES, TEMP, CNDC) by range
           variable_ranges:
-            PRES:
-              3: [-5, -2.4] # Pressure in this range is flagged as probably bad (3)
-              4: [-.inf, -5] # and bad (4) in this range.
+            PRES: # descending bounds -> flag PRES when it falls WITHIN them
+              3: [-2.4, -5] # Pressure in this range is flagged as probably bad (3)
+              4: [-5, -.inf] # and bad (4) in this range.
+            TEMP: # ascending bounds -> flag TEMP when it falls OUTSIDE them
+              3: [0, 30]
+              4: [-2.5, 40]
+            CNDC: 
+              3: [5, 42]
+              4: [2, 45]
           also_flag:
-            # This takes the flags from pressure, and applies them to CNDC & TEMP as well.
-            # ie. If PRES is bad, then CNDC & TEMP are probably also bad given it is all
-            # from the same instrument.
+            # Cross-flag the CTD triad: PRES, TEMP & CNDC come from the same instrument, so
+            # if one is untrustworthy the others probably are too.
             PRES: [CNDC, TEMP]
-          plot: [PRES] # Plot pressure coloured by flag number
+            CNDC: [PRES, TEMP]
+            TEMP: [PRES, CNDC]
 
         stuck value qc: # Checks for consecutive same values
           variables:
@@ -68,7 +86,7 @@ steps:
           also_flag:
             PRES: [CNDC, TEMP] # Apply the bad flags to CNDC & TEMP too
           plot: [PRES] # Plot the outcome for just pressure
-    diagnostics: false
+    diagnostics: true # Plot the CTD QC outcomes (set false to skip the blocking plots)
 
 # Since we are using near-realtime data there are a lot of missing values. Also, since
 # the GPS and science measurement clocks do not sample at the same rate, there are many
@@ -99,9 +117,8 @@ steps:
       to_derive: [DEPTH]
     diagnostics: false
 
-# Now we assign profile numbers
+# Now we assign profile numbers, phases and profile direction
   - name: Find Profiles
-
     diagnostics: false # When true, this step plots a static phase-map + profile/cycle figure.
 
 # Now that profiles have been determined we should flag any that are too short or lack data at depth

@@ -36,14 +36,13 @@ steps:
   - name: Apply QC
     parameters:
       qc_settings:
-        impossible range qc:
+        range qc:
           variable_ranges:
-            PRES:
-              3: [-5, -2.4]
-              4: [-.inf, -5]
+            PRES:                 # descending bounds -> impossible bands (flag INSIDE)
+              3: [-2.4, -5]
+              4: [-5, -.inf]
           also_flag:
             PRES: [CNDC, TEMP]
-          plot: [PRES]
         stuck value qc:
           variables:
             PRES: 2

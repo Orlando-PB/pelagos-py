@@ -2,7 +2,7 @@ import yaml
 from pelagos_py.pipeline import Pipeline, _setup_logging
 
 # --- Configuration Variables ---
-INPUT_FILE = "/Users/orlpru/Desktop/OG1_Data/input/BIO-Carbon/Cabot_645.nc"
+INPUT_FILE = "examples/data/OG1/Nelson_646_R.nc"
 
 BASE_CONFIG_YAML = """
 pipeline:
@@ -16,6 +16,15 @@ steps:
       file_path: PLACEHOLDER
     diagnostics: false
 
+  - name: Correct Values
+    parameters:
+      target_variable: CNDC
+      slope: 10.0
+      intercept: 0.0
+      expected_range: [20, 45]
+      corrected_units: mS/cm
+    diagnostics: false
+
   - name: Apply QC
     parameters:
       qc_settings:
@@ -27,21 +36,30 @@ steps:
   - name: Apply QC
     parameters:
       qc_settings:
-        impossible range qc:
+
+        range qc:
           variable_ranges:
             PRES:
-              3: [-5, -2.4]
-              4: [-.inf, -5]
+              3: [-2.4, -5]
+              4: [-5, -.inf]
+            TEMP:
+              3: [0, 30]
+              4: [-2.5, 40]
+            CNDC:
+              3: [5, 42]
+              4: [2, 45]
           also_flag:
             PRES: [CNDC, TEMP]
-          plot: [PRES]
+            CNDC: [PRES, TEMP]
+            TEMP: [PRES, CNDC]
+
         stuck value qc:
           variables:
             PRES: 2
           also_flag:
             PRES: [CNDC, TEMP]
           plot: [PRES]
-    diagnostics: false
+    diagnostics: true
 
   - name: Interpolate Data
     parameters:
@@ -56,17 +74,12 @@ steps:
   - name: Derive CTD
     parameters:
       to_derive: [DEPTH]
-    diagnostics: false
+    diagnostics: true
+
+
 
   - name: Find Profiles
-    diagnostics: false
-
-  - name: Apply QC
     parameters:
-      qc_settings:
-          valid profile qc:
-            profile_length: 50
-            depth_range: [-1000, 0]
     diagnostics: false
 
   - name: Salinity Adjustment
@@ -87,14 +100,14 @@ steps:
   - name: Derive CTD
     parameters:
       to_derive: [PRAC_SALINITY, ABS_SALINITY, CONS_TEMP, DENSITY]
-    diagnostics: false
+    diagnostics: true
 
   - name: Chla Deep Correction
     parameters:
       apply_to: CHLA
       dark_value: null
       depth_threshold: -550
-    diagnostics: false
+    diagnostics: true
 
   - name: Chla Quenching Correction
     parameters:

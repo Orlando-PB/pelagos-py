@@ -43,21 +43,18 @@ steps:
         impossible location qc: {}  # Are the GPS coords within logical bounds?
         position on land qc: {}     # Are the coords on land?
         impossible speed qc: {}     # Is the horizontal speed reasonable?
-        impossible range qc:
+        range qc: # TODO: Add functionality if these are blank for a "valid_min" in attr - use that to assign the possible 4s
           variable_ranges:
+            # PRES bounds are descending -> impossible bands (flag INSIDE). Everything else is
+            # ascending -> a good band (flag OUTSIDE).
             PRES:
-              3: [-5, -2.4]  # Pressure in this range is flagged as probably bad (3)
-              4: [-.inf, -5]  # and bad (4) in this range.
-          also_flag:
-            PRES: [CNDC, TEMP]  # Flag CNDC & TEMP based on PRES flags
-          plot: [PRES]  # Plot pressure coloured by flag number
-        gross range qc: # TODO: Add functionality if these are blank for a "valid_min" in attr - use that to assign the possible 4s
-          variable_ranges:
+              3: [-2.4, -5]  # Pressure in this range is flagged as probably bad (3)
+              4: [-5, -.inf]  # and bad (4) in this range.
             TEMP:
               3: [0, 30]
               4: [-2.5, 40]
             CNDC:
-              3: [5, 42]  
+              3: [5, 42]
               4: [2, 45]
             DOXY: # Comment out for Nelson
               3: [0.01, 425]  # Sensor possibilities
