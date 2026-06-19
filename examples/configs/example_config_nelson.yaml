@@ -18,7 +18,6 @@
 pipeline:
   name: Example processing pipeline
   description: An example pipeline
-  visualisation: false
   out_directory: examples/data/OG1/
   log_file: example_processing.log
 
@@ -29,6 +28,18 @@ steps:
   - name: Load OG1
     parameters:
       file_path: examples/data/OG1/Nelson_646_R.nc # Path to the input NetCDF file
+    diagnostics: false
+
+# ----------------- FORMAT CHECK -----------------
+
+# Check the loaded file against the OG1 standard. With no 'src', it reuses the
+# file from Load OG1 above. A short pass/fail summary is printed to the console;
+# omit 'output_type' (as here) for console only, or set it to 'json'/'rst' (with
+# an out_directory) to also save a detailed report file.
+  - name: Format Checker
+    parameters:
+      standards: ['og']     # og = OG1
+      proceed_on_fail: true # Keep going even if the file fails the checks
     diagnostics: false
 
 # ----------------- CORRECT VALUES -----------------

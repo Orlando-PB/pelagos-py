@@ -213,6 +213,18 @@ class BaseStep(ConfigMirrorMixin):
             )
             raise SystemExit(1)
 
+    def halt(self, message):
+        """Stop the pipeline cleanly for an unrecoverable misconfiguration.
+
+        Logs ``message`` (the detail and any fix/install hint) at ERROR level,
+        then a terminal STOP line marking the deliberate halt, and exits. Use
+        this instead of raising for config problems discovered at run time, so
+        the user sees one actionable error rather than a wrapped traceback.
+        """
+        self.logger.error("[%s] %s", self.name, message)
+        self.logger.log(STOP, "Pipeline stopped at step '%s'.", self.name)
+        raise SystemExit(1)
+
     # ----------- Config Handling -----------
 
     def update_parameters(self, **kwargs):
