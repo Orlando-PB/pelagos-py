@@ -126,7 +126,7 @@ steps:
   - name: Derive CTD
     parameters:
       to_derive: [DEPTH]
-    diagnostics: false
+    diagnostics: true
 
 # Now we assign profile numbers, phases and profile direction
   - name: Find Profiles
@@ -157,7 +157,7 @@ steps:
           1: 5
           2: 5
       filter_window_size: 21
-    diagnostics: false
+    diagnostics: true
 
 # Finally, derive the remaining CTD variables using another call of Derive CTD
   - name: Derive CTD
@@ -168,7 +168,7 @@ steps:
         CONS_TEMP,
         DENSITY
       ]
-    diagnostics: false
+    diagnostics: true
 
 # ---------------------- EXPORT DATA ------------------------
 # Exporting the output data to the same folder as the input data
@@ -176,3 +176,7 @@ steps:
     parameters:
       export_format: "netcdf"
       output_path: "../examples/data/OG1/Nelson_646_R_Processed.nc"
+
+
+# ----------------------- Report assembly ---------------------
+  - name: Write Data Report (Python)

@@ -24,6 +24,7 @@ glidertools
 ipykernel
 pytest
 rstcloth
+fpdf2
 cartopy
 pyyaml
 cc-plugin-ncei
