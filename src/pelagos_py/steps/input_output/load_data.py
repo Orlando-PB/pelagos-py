@@ -96,6 +96,14 @@ class LoadOG1(BaseStep):
     }
 
     def run(self):
+        # Fail cleanly if the file is missing, rather than surfacing a wrapped
+        # xarray/netCDF4 traceback.
+        if not Path(self.file_path).is_file():
+            self.halt(
+                f"Could not find data file '{self.file_path}'. "
+                "Check the 'file_path' parameter points to an existing file."
+            )
+
         # load data from xarray
         self.data = xr.open_dataset(self.file_path)
         self.log(f"Loaded data from {self.file_path}")
