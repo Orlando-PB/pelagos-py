@@ -152,11 +152,15 @@ class ApplyQC(BaseStep):
             else:
                 all_required_variables.update(test.required_variables)
                 test_qc_outputs_cols.update(test.qc_outputs)
-            #   Check that the required variables for the test are in the dataset
-            if not set(all_required_variables).issubset(set(data.keys())):
+            #   Check that the required variables for the test are in the dataset.
+            #   Use data.variables (data vars + coordinates), not data.keys() (data
+            #   vars only), so a required variable stored as a coordinate (e.g. TIME,
+            #   LATITUDE, LONGITUDE) is not falsely reported as missing.
+            present = set(data.variables)
+            if not set(all_required_variables).issubset(present):
                 raise KeyError(
-                    f"[Apply QC] The data is missing variables: ({set(all_required_variables) - set(data.keys())}) which are required for running QC '{test.qc_name}'."
-                    f" Make sure that the variables are present in the data, or use remove tests from the order."
+                    f"[Apply QC] The data is missing variables: ({set(all_required_variables) - present}) which are required for running QC '{test.qc_name}'."
+                    f" Make sure that the variables are present in the data, or remove tests from the order."
                 )
         # Convert data to polars for fast processing
         # Fetch existing flags from the data and create a place to store them

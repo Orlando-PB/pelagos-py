@@ -98,6 +98,36 @@ def matches_type(spec: dict, value) -> bool:
     return isinstance(value, allowed)
 
 
+def coerce(spec: dict, value):
+    """Coerce a numeric *string* to the spec's declared numeric type.
+
+    Configs are not always parsed by pelagos: a caller may hand the pipeline a
+    dict it built itself (or parsed with plain ``yaml.safe_load``), in which case
+    scientific-notation numbers like ``3e-2`` arrive as strings (a YAML 1.1
+    quirk). When the spec declares a numeric type and does not also accept ``str``,
+    convert such a string to ``int``/``float`` so it satisfies the type check
+    regardless of how the config was produced.
+
+    Anything that is not a numeric string, or whose spec legitimately accepts a
+    string, is returned unchanged.
+    """
+    allowed = _allowed_types(spec)
+    if allowed is None or str in allowed or not isinstance(value, str):
+        return value
+    text = value.strip()
+    if int in allowed and float not in allowed:
+        try:
+            return int(text)
+        except ValueError:
+            return value
+    if float in allowed:
+        try:
+            return float(text)
+        except ValueError:
+            return value
+    return value
+
+
 def _expected_str(spec: dict) -> str:
     """Render a spec's declared ``type`` for an error message."""
     names = _type_name(spec.get("type"))
@@ -165,11 +195,15 @@ def resolve(
             f"Valid parameters: {', '.join(sorted(schema)) or '(none)'}."
         )
 
+    # Coerce numeric strings (e.g. "3e-2" from a hand-parsed/plain-YAML config)
+    # to their declared numeric type before any type checking.
+    supplied = {name: coerce(schema[name], params[name]) for name in params if name in schema}
+
     resolved = {}
     missing = []
     for name, spec in schema.items():
-        if name in params:
-            resolved[name] = params[name]
+        if name in supplied:
+            resolved[name] = supplied[name]
         elif is_required(spec):
             missing.append(name)
         else:
@@ -180,7 +214,7 @@ def resolve(
             f"[{label}] missing required parameter(s): {', '.join(sorted(missing))}"
         )
 
-    bad_types = type_errors(schema, params)
+    bad_types = type_errors(schema, supplied)
     if bad_types:
         raise ValueError(
             f"[{label}] invalid parameter type(s): {'; '.join(bad_types)}"

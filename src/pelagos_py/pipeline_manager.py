@@ -18,6 +18,7 @@ from pelagos_py.utils.config_mirror import ConfigMirrorMixin
 
 import os
 import yaml
+from pelagos_py.utils.yaml_loading import safe_load as yaml_safe_load
 import pandas as pd
 import numpy as np
 import xarray as xr
@@ -65,7 +66,7 @@ class PipelineManager(ConfigMirrorMixin):
         - Mirrors selected keys as attributes (e.g., 'settings')
         """
         with open(config_path, "r") as f:
-            config = yaml.safe_load(f) or {}
+            config = yaml_safe_load(f) or {}
 
         # 1) Store full mission config in private _parameters
         self.load_config(config, mirror_keys=mirror_keys or ["settings"])

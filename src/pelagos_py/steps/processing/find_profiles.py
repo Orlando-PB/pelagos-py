@@ -23,6 +23,7 @@ import pelagos_py.utils.diagnostics as diag
 import pandas as pd
 import numpy as np
 import xarray as xr
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from scipy.signal import find_peaks
@@ -684,6 +685,7 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
         ``CYCLE`` number against time, so the continuity of the numbering can be
         checked at a glance.
         """
+        matplotlib.use("tkagg")
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
 
         # Panel 1: Phase mapping

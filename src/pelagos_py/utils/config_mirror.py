@@ -16,6 +16,7 @@
 
 # config_mirror.py
 import os, yaml, json
+from pelagos_py.utils.yaml_loading import safe_load as yaml_safe_load
 
 
 class ConfigMirrorMixin:
@@ -80,7 +81,7 @@ class ConfigMirrorMixin:
 
     def load_config_from_file(self, path: str, mirror_keys=None):
         with open(path, "r") as f:
-            cfg = yaml.safe_load(f) or {}
+            cfg = yaml_safe_load(f) or {}
         self.load_config(cfg, mirror_keys=mirror_keys)
         return cfg
 
