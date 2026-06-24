@@ -242,9 +242,16 @@ class ApplyQC(BaseStep):
                 attrs[f"{attr_test}_params"] = json.dumps(qc_test_params)
                 # Can get indices of 3/4 with np.where(var_flags.to_numpy() == 3)[0] for future reference
 
-            # Diagnostic plotting
+            # Diagnostic plotting. Never let a diagnostic-only error abort QC;
+            # this matters when the report writer force-enables diagnostics to
+            # capture plots for every test.
             if self.diagnostics:
-                qc_test_instance.plot_diagnostics()
+                try:
+                    qc_test_instance.plot_diagnostics()
+                except Exception as exc:  # noqa: BLE001 - diagnostics must not be fatal
+                    self.log_warn(
+                        f"Diagnostic plotting failed for QC test '{qc_qc_name}': {exc}"
+                    )
 
             # Once finished, remove the test instance from memory
             del qc_test_instance

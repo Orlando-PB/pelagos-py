@@ -27,5 +27,6 @@ rstcloth
 fpdf2
 cartopy
 pyyaml
+compliance-checker
 cc-plugin-ncei
 cc-plugin-og

@@ -236,11 +236,17 @@ class FormatCheck(BaseStep):
         #   Gather a short per-checker summary; track the overall pass/fail.
         overall_pass = True
         summary_lines = []
+        cc_results = {}
         for checker_name, (groups, _errors) in score_groups.items():
             passed = check_suite.passtree(groups, _LENIENT_LIMIT)
             overall_pass = overall_pass and passed
             result = check_suite.dict_output(checker_name, groups, src, _LENIENT_LIMIT)
             summary_lines += console_summary(checker_name, result, passed)
+            cc_results[checker_name] = result
+
+        #   Stash the structured results so the data report can render a Format
+        #   Checker section regardless of whether a report file was saved.
+        self.context["cc_results"] = cc_results
 
         #   Write the detailed report file(s), if requested and possible.
         saved = self._write_reports(check_suite, score_dict, out_dir, fname, save_formats)
