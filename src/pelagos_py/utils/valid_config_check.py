@@ -53,10 +53,62 @@ def _unknown_params(schema, parameters, allowed_extra=()):
     ]
 
 
+def _qc_test_io(qc_class, qc_params):
+    """Resolve a QC test's required and provided variables from its parameters.
+
+    Mirrors how Apply QC resolves them at run time: dynamic tests derive their
+    variables from the supplied parameters (so they are instantiated with no data
+    to introspect), while static tests expose them as class attributes.
+    """
+    if getattr(qc_class, "dynamic", False):
+        probe = qc_class(None, **(qc_params or {}))
+        return list(probe.required_variables), list(probe.qc_outputs)
+    return (
+        list(getattr(qc_class, "required_variables", [])),
+        list(getattr(qc_class, "qc_outputs", [])),
+    )
+
+
+def _pipeline_provided_variables(steps_list):
+    """All variables any step in the pipeline produces.
+
+    Used to tell an ordering mistake (a required variable that *is* produced, but
+    by a later step) apart from a variable that is simply unknown to the schema
+    because it comes straight from the input data file. Only the former is worth
+    reporting up front, so QC tests that legitimately depend on file-native
+    variables (e.g. DOWNWELLING_PAR) are not flagged.
+    """
+    provided = set()
+    for step_config in steps_list:
+        step_class = STEP_CLASSES.get(step_config["name"])
+        if not step_class:
+            continue
+        parameters = step_config.get("parameters", {}) or {}
+        provided.update(getattr(step_class, "provided_variables", []))
+        provided.update(getattr(step_class, "qc_outputs", []))
+        provided.update(parameters.get("to_derive", []))
+        provided.update(parameters.get("qc_outputs", []))
+        if step_config["name"] == "Apply QC":
+            for qc_name, qc_params in (parameters.get("qc_settings") or {}).items():
+                qc_class = QC_CLASSES.get(qc_name)
+                if qc_class is None:
+                    continue
+                try:
+                    _, outputs = _qc_test_io(qc_class, qc_params)
+                except Exception:
+                    # Malformed parameters are reported by the per-step validation
+                    # below; here we only gather outputs, so skip what we can't resolve.
+                    continue
+                provided.update(outputs)
+    return provided
+
+
 def check_pipeline_variables(steps_list, logger, available_vars=None):
     if available_vars is None:
         logger.info("Checking pipeline variable requirements...")
         available_vars = set(STANDARD_VARIABLES)
+
+    pipeline_provided = _pipeline_provided_variables(steps_list)
 
     for step_config in steps_list:
         step_name = step_config["name"]
@@ -118,6 +170,7 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
         # requirements are checked by Apply QC at run time, where _QC columns and
         # also_flag propagation are resolved.)
         if step_name == "Apply QC":
+            qc_step_outputs = set()
             for qc_name, qc_params in (parameters.get("qc_settings") or {}).items():
                 qc_class = QC_CLASSES.get(qc_name)
                 if qc_class is None:
@@ -164,6 +217,38 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
                         raise ValueError(
                             f"Invalid parameter type(s) for QC test '{qc_name}': {bad_str}."
                         )
+
+                # Resolve this test's variable requirements the same way Apply QC
+                # does at run time. A required variable is only reported when it is
+                # missing now *and* produced by some step in the pipeline: that means
+                # it exists but is ordered after this Apply QC (e.g. PROFILE_NUMBER
+                # required before "Find Profiles" runs). A variable absent from the
+                # pipeline's outputs is assumed to come from the input data file and
+                # is left for the run-time check, so file-native variables (e.g.
+                # DOWNWELLING_PAR) are not falsely flagged.
+                qc_required, qc_outputs = _qc_test_io(qc_class, qc_params)
+                qc_step_outputs.update(qc_outputs)
+                out_of_order = [
+                    v
+                    for v in qc_required
+                    if v not in available_vars and v in pipeline_provided
+                ]
+                if out_of_order:
+                    missing_str = ", ".join(out_of_order)
+                    logger.error(
+                        "Validation Failed: QC test '%s' requires %s, but it is "
+                        "produced by a later step. Reorder the pipeline so the "
+                        "producing step runs first.",
+                        qc_name,
+                        missing_str,
+                    )
+                    raise ValueError(
+                        f"Missing variables for QC test '{qc_name}': {missing_str}. "
+                        f"These are produced later in the pipeline — reorder the "
+                        f"steps so they run beforehand."
+                    )
+
+            available_vars.update(qc_step_outputs)
 
         req_vars = list(getattr(step_class, "required_variables", []))
         provided_vars = getattr(step_class, "provided_variables", []) + getattr(

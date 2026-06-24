@@ -25,6 +25,7 @@ import os
 import importlib
 import pathlib
 import yaml
+from pelagos_py.utils.yaml_loading import safe_load as yaml_safe_load
 import logging
 from pelagos_py.steps.base_step import REGISTERED_STEPS
 from pelagos_py.steps.base_qc import REGISTERED_QC
@@ -99,7 +100,7 @@ def create_step(step_config, context=None):
         if not os.path.exists(step_config):
             raise FileNotFoundError(f"Step config file not found: {step_config}")
         with open(step_config, "r") as f:
-            step_config = yaml.safe_load(f) or {}
+            step_config = yaml_safe_load(f) or {}
         if "name" not in step_config:
             raise ValueError(f"Invalid step YAML: missing 'name' key -> {step_config}")
 

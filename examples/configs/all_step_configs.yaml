@@ -269,17 +269,9 @@ steps:
             PRES: 10
             CHLA: 20
 
-        # PAR irregularity test (*/par_irregularity_test.py):
-        #   Flag: 4 (bad), 3 (probably bad)
-        #   Flags each PAR measurement according to the statistical shape of the irradiance profile and
-        #   solar elevation. Based on La Forgia & Organelli (2025, L&O Methods, 23:526–542).
-        PAR irregularity qc:
-          # [noise_equivalent_estimate]:
-          #   The PAR noise floor. If values are found below this they are flagged as probably bad (3).
-          noise_equivalent_estimate: 3e-2
-          # [plot_profiles]:
-          #   List of profile numbers to be plotted
-          plot_profiles: [100, 200]
+        # NOTE: "PAR irregularity qc" requires PROFILE_NUMBER and so must run *after*
+        # "Find Profiles". It is therefore applied in a second "Apply QC" step further
+        # down this file (see the Profile Finding section) rather than here.
     # [diagnostics]:
     #   If diagnostics is true, every specified test in this Apply QC call will generate plots
     diagnostics: false
@@ -388,6 +380,27 @@ steps:
     # [diagnostics]:
     #   If true, plots a static two-panel figure: the phase classification (DEPTH-TIME
     #   coloured by SCI_PHASE) and the derived PROFILE_NUMBER / CYCLE numbering.
+    diagnostics: false
+
+# Apply QC (post-profile): tests that depend on PROFILE_NUMBER must run after "Find Profiles".
+# "Apply QC" can be called any number of times, so profile-dependent tests live in this second call.
+  - name: "Apply QC"
+    parameters:
+      qc_settings:
+        # PAR irregularity test (*/par_irregularity_test.py):
+        #   Flag: 4 (bad), 3 (probably bad)
+        #   Flags each PAR measurement according to the statistical shape of the irradiance profile and
+        #   solar elevation. Based on La Forgia & Organelli (2025, L&O Methods, 23:526–542).
+        #   Requires PROFILE_NUMBER (from "Find Profiles"), which is why it runs here.
+        PAR irregularity qc:
+          # [noise_equivalent_estimate]:
+          #   The PAR noise floor. If values are found below this they are flagged as probably bad (3).
+          noise_equivalent_estimate: 3e-2
+          # [plot_profiles]:
+          #   List of profile numbers to be plotted
+          plot_profiles: [100, 200]
+    # [diagnostics]:
+    #   If diagnostics is true, every specified test in this Apply QC call will generate plots
     diagnostics: false
 
 

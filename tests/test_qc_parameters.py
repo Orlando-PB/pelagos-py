@@ -77,3 +77,45 @@ def test_validator_passes_valid_qc_config():
         }
     ]
     assert check_pipeline_variables(steps, LOGGER) is True
+
+
+# --- Validator catches QC variable ordering mistakes -----------------------------
+
+
+def test_validator_flags_qc_var_produced_by_later_step():
+    # PAR irregularity needs PROFILE_NUMBER, which "Find Profiles" produces — but
+    # here it runs *after* the QC, so the requirement is unmet at that point.
+    steps = [
+        {
+            "name": "Apply QC",
+            "parameters": {"qc_settings": {"PAR irregularity qc": {}}},
+        },
+        {"name": "Find Profiles", "parameters": {}},
+    ]
+    with pytest.raises(ValueError, match="PROFILE_NUMBER"):
+        check_pipeline_variables(steps, LOGGER)
+
+
+def test_validator_passes_qc_var_in_correct_order():
+    steps = [
+        {"name": "Find Profiles", "parameters": {}},
+        {
+            "name": "Apply QC",
+            "parameters": {"qc_settings": {"PAR irregularity qc": {}}},
+        },
+    ]
+    # DOWNWELLING_PAR is also required by PAR irregularity but is a file-native
+    # variable no step produces, so it must not be flagged.
+    assert check_pipeline_variables(steps, LOGGER) is True
+
+
+def test_validator_ignores_file_native_qc_requirement():
+    # With no producing step in the pipeline, a missing requirement is assumed to
+    # come from the input data file and is left for the run-time check.
+    steps = [
+        {
+            "name": "Apply QC",
+            "parameters": {"qc_settings": {"PAR irregularity qc": {}}},
+        }
+    ]
+    assert check_pipeline_variables(steps, LOGGER) is True
