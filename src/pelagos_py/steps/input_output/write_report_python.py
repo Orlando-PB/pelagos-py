@@ -82,6 +82,10 @@ def sanitize(text) -> str:
 #   Project metadata shown on the report.
 GITHUB_URL = "https://github.com/NOC-OBG-Autonomy/pelagos-py"
 
+#   Hyperlink colour: a dark teal (rather than the default web blue) so links sit
+#   more comfortably against the report's traditional, Times-set look.
+_LINK_TEAL = (0, 102, 102)
+
 #   The OG1 format user manual, linked from the Format Checker heading when the
 #   compliance checker that ran is the OG1 one.
 OG1_MANUAL_URL = "https://github.com/OceanGlidersCommunity/OG-format-user-manual"
@@ -394,8 +398,13 @@ class ReportPDF(FPDF):
         self.pipeline_name = pipeline_name
         self.pipeline_description = pipeline_description
         self.track_map_path = track_map_path
-        self.set_auto_page_break(auto=True, margin=15)
+        #   A roomy bottom margin keeps body content clear of the page-number
+        #   footer (which sits ~15 mm from the foot).
+        self.set_auto_page_break(auto=True, margin=20)
         self.set_title(sanitize(title))
+        #   Table-of-contents entries (title, page number, internal link id),
+        #   filled in by :meth:`section_heading` as each section is written.
+        self.toc = []
 
     def header(self) -> None:
         """Running header on every page except the title page."""
@@ -503,7 +512,7 @@ class ReportPDF(FPDF):
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
         self.set_font("Times", "U", 11)
-        self.set_text_color(0, 0, 200)
+        self.set_text_color(*_LINK_TEAL)
         self.multi_cell(
             0, 6, GITHUB_URL, align="C", link=GITHUB_URL,
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
@@ -552,6 +561,38 @@ class ReportPDF(FPDF):
         self.ln(2)
         self.set_font("Times", "B", 16)
         self.multi_cell(0, 9, sanitize(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.ln(2)
+
+    def section_heading(self, text: str) -> None:
+        """Write a level-2 heading and record it for the contents/index page.
+
+        Captures an internal link to the current page so the closing index can
+        list each section with its page number and link straight to it. Call
+        once per top-level section, on the page the section begins.
+        """
+        link = self.add_link()
+        self.set_link(link, page=self.page_no())
+        self.toc.append((text, self.page_no(), link))
+        self.h2(text)
+
+    def contents(self) -> None:
+        """Render the recorded sections as a compact, linkable contents list.
+
+        Each row is the section title (a teal internal link to its page) with the
+        page number dot-led to the right. Drawn small so the contents stay tidy.
+        """
+        if not self.toc:
+            return
+        self.set_font("Times", "", 9)
+        page_w = 14  #   narrow right-hand column for the page number
+        for title, page, link in self.toc:
+            self.set_text_color(*_LINK_TEAL)
+            self.cell(self.epw - page_w, 5, sanitize(title), link=link)
+            self.set_text_color(0)
+            self.cell(
+                page_w, 5, str(page), align="R", link=link,
+                new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+            )
         self.ln(2)
 
     def h3(self, text: str) -> None:
@@ -735,7 +776,7 @@ class ReportPDF(FPDF):
         self.ln(2)
         self.set_font("Times", "BU" if url else "B", 13)
         if url:
-            self.set_text_color(0, 0, 200)
+            self.set_text_color(*_LINK_TEAL)
             self.multi_cell(
                 0, 8, sanitize(label), link=url,
                 new_x=XPos.LMARGIN, new_y=YPos.NEXT,
@@ -754,13 +795,14 @@ class ReportPDF(FPDF):
             self.set_text_color(0)
         self.ln(1)
 
-    def cc_checks(self, blocks, ncols: int = 2, col_gap: float = 6) -> None:
-        """List compliance-checker findings as a two-column, heading-led list.
+    def cc_checks(self, blocks, ncols: int = 1, col_gap: float = 6) -> None:
+        """List compliance-checker findings as a heading-led list.
 
         Each block is ``(check_name, [messages])``: the check name is set as a
         bold sub-heading and its messages follow as a short list beneath it.
-        Blocks flow newspaper-style across ``ncols`` columns, which is far more
-        compact than a table whose first column is mostly empty.
+        Blocks flow newspaper-style across ``ncols`` columns; a single full-width
+        column suits the (now de-duplicated, compact) findings, whose long
+        messages would wrap awkwardly in a narrow column.
 
         Parameters
         ----------
@@ -774,18 +816,21 @@ class ReportPDF(FPDF):
         if not blocks:
             return
 
-        title_h, msg_h = 5, 4.2
+        #   Set small: the Format Checker can list many findings, so a compact
+        #   size keeps the section from sprawling across pages.
+        title_size, msg_size = 8, 7.5
+        title_h, msg_h = 4, 3.4
         cols = _ColumnFlow(self, ncols=ncols, col_gap=col_gap)
         w = cols.col_w
         for name, msgs in blocks:
             #   Measure first so a check stays with (at least) its first message
             #   rather than its heading being orphaned at a column foot.
-            self.set_font("Times", "B", 9.5)
+            self.set_font("Times", "B", title_size)
             h_title = self.multi_cell(
                 w, title_h, sanitize(name), border=0,
                 dry_run=True, output=MethodReturnValue.HEIGHT,
             )
-            self.set_font("Times", "", 9)
+            self.set_font("Times", "", msg_size)
             msg_heights = [
                 self.multi_cell(
                     w, msg_h, sanitize(f"- {m}"), border=0,
@@ -797,13 +842,13 @@ class ReportPDF(FPDF):
 
             x, y = cols.place(h_title)
             self.set_xy(x, y)
-            self.set_font("Times", "B", 9.5)
+            self.set_font("Times", "B", title_size)
             self.multi_cell(
                 w, title_h, sanitize(name), border=0,
                 new_x=XPos.LMARGIN, new_y=YPos.TOP,
             )
 
-            self.set_font("Times", "", 9)
+            self.set_font("Times", "", msg_size)
             for m, hm in zip(msgs, msg_heights):
                 x, y = cols.place(hm)
                 self.set_xy(x, y)
@@ -911,7 +956,7 @@ def config_section(
     """
     #   Begin on a fresh page like the report's other sections.
     pdf.add_page()
-    pdf.h2("Configuration")
+    pdf.section_heading("Configuration")
     if not config:
         pdf.body("No configuration available.")
         return
@@ -969,7 +1014,7 @@ def diagnostics_section(pdf: ReportPDF, captured: list) -> None:
     #   Start on a fresh page so the heading isn't orphaned at the foot of the
     #   previous section with its plots breaking onto the next page.
     pdf.add_page()
-    pdf.h2("Step diagnostics")
+    pdf.section_heading("Step diagnostics")
     pdf.body(
         "Diagnostic plots generated for each step that produces one. These are "
         "generated for the report regardless of each step's diagnostics setting."
@@ -1000,7 +1045,7 @@ def qc_section(pdf: ReportPDF, data: xr.Dataset) -> None:
     #   Start on a fresh page so the heading begins a page rather than trailing
     #   the previous section.
     pdf.add_page()
-    pdf.h2("Quality Control Summary")
+    pdf.section_heading("Quality Control Summary")
 
     qc_dict = build_qc_dict(data)
     rows = flatten_qc_dict(qc_dict)
@@ -1033,7 +1078,7 @@ def add_log(logfile, pdf: ReportPDF, ncols: int = 4) -> None:
         Number of " - " separated columns expected per log line.
     """
     pdf.add_page()
-    pdf.h2("Logfile of run")
+    pdf.section_heading("Logfile of run")
 
     rows = []
     try:
@@ -1065,6 +1110,45 @@ def add_log(logfile, pdf: ReportPDF, ncols: int = 4) -> None:
     pdf.terminal_block(rows)
 
 
+def _collapse_repeated_msgs(msgs) -> list:
+    """Combine messages that differ only by variable name into a single line.
+
+    Compliance checkers often emit the same finding once per variable (e.g.
+    ``"variable TEMP vocabulary ... contains https. Vocabulary URIs use http"``).
+    Messages of the shape ``variable <NAME> <rest>`` are grouped by their text
+    after the variable name and merged into one line listing every affected
+    variable, turning a long, repetitive block into a few lines. Order of first
+    appearance is preserved, and any message not of that shape is kept verbatim.
+    """
+    order = []  # group keys, in first-seen order
+    groups = {}
+    for m in msgs:
+        parts = m.split(maxsplit=2)
+        if len(parts) == 3 and parts[0].lower() == "variable":
+            #   Group by the text after the variable name (parts[2]).
+            key = ("var", parts[2])
+            if key not in groups:
+                groups[key] = {"rest": parts[2], "vars": []}
+                order.append(key)
+            groups[key]["vars"].append(parts[1])
+        else:
+            #   Not "variable <NAME> <rest>": keep verbatim, never merged.
+            key = ("single", len(order))
+            groups[key] = {"msg": m}
+            order.append(key)
+
+    out = []
+    for key in order:
+        group = groups[key]
+        if "msg" in group:
+            out.append(group["msg"])
+        elif len(group["vars"]) == 1:
+            out.append(f"variable {group['vars'][0]} {group['rest']}")
+        else:
+            out.append(f"variables {', '.join(group['vars'])} {group['rest']}")
+    return out
+
+
 def _render_cc_results(pdf: ReportPDF, cc_data: dict) -> None:
     """Render compliance-checker results as per-checker scores and message tables.
 
@@ -1092,7 +1176,7 @@ def _render_cc_results(pdf: ReportPDF, cc_data: dict) -> None:
         #   Each failing check becomes a heading-led block (name + its messages)
         #   rather than table rows with a mostly-empty name column.
         blocks = [
-            (entry.get("name", "Unknown"), entry["msgs"])
+            (entry.get("name", "Unknown"), _collapse_repeated_msgs(entry["msgs"]))
             for entry in test_data.get("all_priorities", [])
             if entry.get("msgs")
         ]
@@ -1127,7 +1211,7 @@ def format_checker_section(
         ``cc_results`` is not available.
     """
     pdf.add_page()
-    pdf.h2("Format Checker results")
+    pdf.section_heading("Format Checker results")
 
     if cc_results:
         _render_cc_results(pdf, cc_results)
@@ -1207,10 +1291,11 @@ def variable_index_rows(data: xr.Dataset) -> list:
 def index_section(pdf: ReportPDF, data: xr.Dataset) -> None:
     """Write the closing index page.
 
-    Repeats the pelagos-py credit, then collects the report's reference tables:
-    a QC flag glossary, an index of every variable (with long name and units)
-    and the glider/mission global attributes. Compact tables so the reference
-    fits on as few pages as possible.
+    Repeats the pelagos-py credit, then a linked contents list (each section with
+    its page number) followed by the report's reference tables: a QC flag
+    glossary, an index of every variable (with long name and units) and the
+    glider/mission global attributes. Compact tables so the reference fits on as
+    few pages as possible.
 
     Parameters
     ----------
@@ -1228,7 +1313,7 @@ def index_section(pdf: ReportPDF, data: xr.Dataset) -> None:
         new_x=XPos.LMARGIN, new_y=YPos.NEXT,
     )
     pdf.set_font("Times", "U", 11)
-    pdf.set_text_color(0, 0, 200)
+    pdf.set_text_color(*_LINK_TEAL)
     pdf.multi_cell(
         0, 6, GITHUB_URL, align="C", link=GITHUB_URL,
         new_x=XPos.LMARGIN, new_y=YPos.NEXT,
@@ -1236,7 +1321,11 @@ def index_section(pdf: ReportPDF, data: xr.Dataset) -> None:
     pdf.set_text_color(0)
     pdf.ln(8)
 
-    pdf.h2("Index")
+    pdf.section_heading("Index")
+
+    #   Contents: each report section with its page number, linked in the PDF.
+    pdf.h3("Contents")
+    pdf.contents()
 
     #   QC flag glossary: translate the flag values used throughout the report.
     pdf.h3("QC flag glossary")
@@ -1286,6 +1375,117 @@ _MAP_GRID = "#8294b6"
 _MAP_GRID_TEXT = "#d2dcee"
 _MAP_GOLD_STOPS = ["#4a3c10", "#b8922a", "#ffd700", "#fff4bf"]
 _MAP_START = "#9fe0a0"
+
+
+#   Cross-section panels (PRES vs TIME, coloured by a variable). Each panel
+#   names the variable to colour by (first match wins, so OG1/lower-case and
+#   BBP700/BBP532 fallbacks can be listed in preference order) and the exact
+#   colourmap stops (low value -> high value; not reversed) used to build a
+#   LinearSegmentedColormap. ``special`` flags BBP, which is drawn largest-on-top
+#   with smaller markers so its sharp spikes surface rather than hide behind
+#   ordinary points.
+_CROSS_SECTION_PANELS = (
+    {
+        "label": "Temperature",
+        "candidates": ("TEMP", "TEMPERATURE", "temp"),
+        "stops": [
+            "#1b1c6e", "#365292", "#5286b7", "#8db4c4", "#dbe5cd",
+            "#f1d8b4", "#d9997e", "#c05e4c", "#a0372b", "#811910",
+        ],
+    },
+    {
+        "label": "Salinity",
+        "candidates": ("PRAC_SALINITY", "ABS_SALINITY", "PSAL", "SALINITY", "salinity"),
+        "stops": [
+            "#f9e8b1", "#f1c38f", "#e8a074", "#db7c5f", "#cb5c58",
+            "#b2425c", "#943061", "#732460", "#511c53", "#321340",
+        ],
+    },
+    {
+        "label": "Density",
+        "candidates": ("DENSITY", "density", "SIGMA0", "SIGMA_THETA", "POTDENS"),
+        "stops": [
+            "#e6f1f7", "#c4d8e8", "#a6bed9", "#8ba4c9", "#7489b8", "#636c9f",
+            "#595388", "#55406e", "#4e3055", "#3f2040", "#2e1226",
+        ],
+    },
+    {
+        "label": "Oxygen",
+        "candidates": ("MOLAR_DOXY", "molar_doxy", "DOXY", "molar_deoxy"),
+        "stops": [
+            "#400000", "#5c0000", "#780000", "#808080", "#8c8c8c", "#979797",
+            "#a3a3a3", "#aeaeae", "#baba10", "#dbdb0a", "#fdfd00",
+        ],
+    },
+    {
+        "label": "Chlorophyll",
+        "candidates": ("CHLA_ADJUSTED", "CHLA", "chla_adjusted", "CHLOROPHYLL"),
+        "stops": [
+            "#182548", "#2c5398", "#4a88a4", "#87b8b5", "#dae4da",
+            "#e6d992", "#a8ab3e", "#56872e", "#285932", "#1b2617",
+        ],
+    },
+    {
+        "label": "Backscatter",
+        "candidates": ("BBP700", "BBP532", "BBP", "bbp"),
+        "special": "bbp",
+        "stops": [
+            "#cccccc", "#737373", "#000000", "#1335f5", "#3f8df7",
+            "#67dffb", "#a1fc4e", "#f8d748", "#ef8733", "#ea3323",
+        ],
+    },
+)
+
+#   Names tried (in order) for the cross-section's shared time and depth axes.
+_CS_TIME_CANDIDATES = ("TIME", "time")
+_CS_PRES_CANDIDATES = ("PRES", "PRESSURE", "pres", "DEPTH")
+
+#   Default scatter marker size; BBP uses half this so its surfaced high values
+#   sit cleanly over the rest rather than smearing.
+_CS_MARKER_SIZE = 8.0
+
+#   Only points whose QC flag is one of these are plotted in the cross-sections
+#   (good / probably-good / value-changed / interpolated). Points carrying any
+#   other flag (e.g. bad, not-used, missing) are masked out before plotting.
+_CS_ALLOWED_QC_FLAGS = (0, 1, 2, 5, 8)
+
+#   Gliders log millions of measurements; a million-point scatter renders slowly
+#   and bloats the PDF. Thin (consistently across panels, so points stay aligned)
+#   to this cap, which still looks dense on an A4 page.
+_CS_MAX_POINTS = 120_000
+
+
+def _first_present(data: xr.Dataset, names) -> str:
+    """Return the first of ``names`` that is a variable in ``data``, else ``None``."""
+    for name in names:
+        if name in data.variables:
+            return name
+    return None
+
+
+def _cs_date_format(span_days: float) -> str:
+    """Pick a date format string for the cross-section's shared X axis.
+
+    Adapts to the visible span: sub-minute shows seconds; up to a day shows
+    hours/minutes; days show the date; longer spans coarsen to month, then year.
+    """
+    if span_days < 1.0 / 1440.0:      # sub-minute
+        return "%H:%M:%S"
+    if span_days < 1.0:               # minutes / hours
+        return "%H:%M"
+    if span_days < 60.0:              # days
+        return "%d %b %Y"
+    if span_days < 730.0:             # months
+        return "%b %Y"
+    return "%Y"                       # years
+
+
+def _var_label(data: xr.Dataset, var: str, label: str) -> str:
+    """``label [units]`` for a variable, dropping units when absent or "None"."""
+    units = data[var].attrs.get("units")
+    if units and str(units).lower() != "none":
+        return f"{label} [{units}]"
+    return label
 
 
 def _find_lonlat(data: xr.Dataset):
@@ -1350,25 +1550,34 @@ def glider_track_map(data: xr.Dataset, outdir: str, ext: str = ".png") -> str:
         stride = int(np.ceil(lon.size / max_pts))
         lon, lat = lon[::stride], lat[::stride]
 
-    #   Square, padded extent centred on the track.
+    #   Padded extent centred on the track.
     lon_mid = 0.5 * (np.nanmin(lon) + np.nanmax(lon))
     lat_mid = 0.5 * (np.nanmin(lat) + np.nanmax(lat))
     span = max(np.nanmax(lon) - np.nanmin(lon), np.nanmax(lat) - np.nanmin(lat))
     span = max(span, 0.05) * 1.6  #   breathing room (and a floor for short tracks)
-    extent = [lon_mid - span / 2, lon_mid + span / 2,
-              lat_mid - span / 2, lat_mid + span / 2]
+
+    #   One degree of longitude covers cos(latitude) times the ground distance of
+    #   one degree of latitude, so an equal-degree box stretches the coastline
+    #   east-west at high latitudes (e.g. Iceland looks squashed). Widen the
+    #   longitude extent by 1/cos(lat) and stretch the axis by the same factor:
+    #   the map stays square on the page but the land keeps its true proportions.
+    cos_lat = max(np.cos(np.deg2rad(lat_mid)), 0.2)  # floor avoids a near-pole blow-up
+    lat_half = span / 2
+    lon_half = lat_half / cos_lat
+    extent = [lon_mid - lon_half, lon_mid + lon_half,
+              lat_mid - lat_half, lat_mid + lat_half]
     #   Finer coastline for tighter views; coarser (and cheaper) when zoomed out.
     scale = "10m" if span < 3 else "50m" if span < 20 else "110m"
 
     proj = ccrs.PlateCarree()
-    #   Square figure (1:1) so the map renders proportionally on the title page;
-    #   the extent above is already square, so the track keeps its true shape.
+    #   Square figure (1:1) so the map renders proportionally on the title page.
     fig = plt.figure(figsize=(6, 6))
     ax = fig.add_subplot(1, 1, 1, projection=proj)
     fig.patch.set_facecolor(_MAP_OCEAN)
     ax.set_facecolor(_MAP_OCEAN)
     try:
         ax.set_extent(extent, crs=proj)
+        ax.set_aspect(1.0 / cos_lat)  #   latitude-correct proportions (see above)
     except Exception:  # noqa: BLE001 - degenerate extents fall back to autoscale
         pass
 
@@ -1541,7 +1750,7 @@ def make_plots(
     TODO: Define long-term storage for this. Is `diagnostics` the right place?
     """
     pdf.add_page()
-    pdf.h2("QC Plots")
+    pdf.section_heading("QC Plots")
 
     #   Only plot QC flags that belong to a numeric measurement series. Many
     #   QC variables flag metadata/coordinate fields whose parent is a string,
@@ -1579,6 +1788,194 @@ def make_plots(
         pdf.image_full(hist_img, aspect=3.2 / 8)
 
 
+def cross_section_figure(data: xr.Dataset, outdir: str, ext: str = ".png") -> str:
+    """Render the A4 cross-section figure (PRES vs TIME, one panel per variable).
+
+    A single static A4-portrait figure: a vertical stack of panels (see
+    :data:`_CROSS_SECTION_PANELS`) that all share the TIME X axis. Each panel
+    draws PRES (depth, axis inverted so the surface is at the top) against TIME,
+    every point a marker coloured by that panel's variable, with a narrow
+    vertical-profile strip on the left and a colourbar on the right. Colour
+    scaling uses robust percentiles (0.1st / 99.9th) so spikes don't blow out
+    the scale, and BBP is drawn largest-on-top.
+
+    Returns the saved image path, or ``None`` when the dataset has no usable
+    TIME/PRES coordinates to plot against.
+
+    Parameters
+    ----------
+    data : xarray.core.dataset.Dataset
+        The entire dataset, including attributes.
+    outdir : str
+        Directory (with trailing separator) to write the figure to.
+    ext : str
+        Image filetype extension (.png, .svg, etc.).
+    """
+    import matplotlib.dates as mdates
+    from matplotlib.colors import LinearSegmentedColormap
+    from matplotlib.ticker import MaxNLocator
+
+    time_name = _first_present(data, _CS_TIME_CANDIDATES)
+    pres_name = _first_present(data, _CS_PRES_CANDIDATES)
+    if time_name is None or pres_name is None:
+        return None
+
+    time = np.asarray(data[time_name].values).ravel()
+    pres = np.asarray(data[pres_name].values, dtype=float).ravel()
+    n = min(time.size, pres.size)
+    if n < 2:
+        return None
+    time, pres = time[:n], pres[:n]
+
+    #   Thin (consistently, so every panel keeps the same points) to a cap that
+    #   still looks dense on A4 but renders quickly and keeps the PDF small.
+    if n > _CS_MAX_POINTS:
+        idx = np.linspace(0, n - 1, _CS_MAX_POINTS).astype(int)
+    else:
+        idx = np.arange(n)
+    time, pres = time[idx], pres[idx]
+
+    #   matplotlib date numbers for the shared X axis (NaT -> NaN, ignored).
+    x = mdates.date2num(time)
+
+    panels = _CROSS_SECTION_PANELS
+    #   A4-portrait proportions, trimmed a little in height so the "Cross Section
+    #   Plots" heading and the figure sit together on one page. constrained_layout
+    #   lines up every panel with its left profile strip and right colourbar.
+    fig = plt.figure(figsize=(8.27, 10.3), layout="constrained")
+    #   Per row: [narrow profile strip] [main cross-section] [thin colourbar].
+    gs = fig.add_gridspec(len(panels), 3, width_ratios=[0.22, 1.0, 0.045])
+
+    main_axes = []
+    for i, panel in enumerate(panels):
+        ax_prof = fig.add_subplot(gs[i, 0])
+        #   Main panels share the TIME X axis; profile shares the (inverted) PRES
+        #   Y axis with its own main panel.
+        ax_main = fig.add_subplot(
+            gs[i, 1], sharex=main_axes[0] if main_axes else None, sharey=ax_prof
+        )
+        cax = fig.add_subplot(gs[i, 2])
+        main_axes.append(ax_main)
+
+        cmap = LinearSegmentedColormap.from_list(
+            f"xsec_{panel['label'].lower()}", panel["stops"]
+        )
+
+        cvar = _first_present(data, panel["candidates"])
+        if cvar is None:
+            #   Keep the panel (so the layout is fixed at 6 rows) but note the gap.
+            ax_main.text(
+                0.5, 0.5, f"{panel['label']} not available",
+                ha="center", va="center", transform=ax_main.transAxes,
+                fontsize=8, color="0.4",
+            )
+            ax_main.tick_params(labelleft=False)
+            ax_prof.tick_params(labelsize=6)
+            ax_prof.set_ylabel(_var_label(data, pres_name, pres_name), fontsize=7)
+            ax_prof.set_xlabel(panel["label"], fontsize=6)
+            cax.axis("off")
+            continue
+
+        c = np.asarray(data[cvar].values, dtype=float).ravel()[:n][idx]
+
+        #   Keep only points whose QC flag is in the allowed set; mask the rest to
+        #   NaN so they're dropped from both the cross-section and the profile (and
+        #   ignored by the percentile colour limits below). Variables without a
+        #   ``_QC`` companion are plotted unfiltered.
+        qc_name = f"{cvar}_QC"
+        if qc_name in data.variables:
+            qc = np.asarray(data[qc_name].values, dtype=float).ravel()[:n][idx]
+            c = np.where(np.isin(qc, _CS_ALLOWED_QC_FLAGS), c, np.nan)
+
+        #   Robust colour limits: percentiles, not raw min/max, so sharp spikes
+        #   don't blow out the scale. Guard the all-NaN case.
+        if np.isfinite(c).any():
+            vmin = np.nanpercentile(c, 0.1)
+            vmax = np.nanpercentile(c, 99.9)
+        else:
+            vmin, vmax = 0.0, 1.0
+
+        if panel.get("special") == "bbp":
+            #   Largest-on-top: sort ascending so the highest BBP values draw last
+            #   (NaNs to the bottom), with a smaller marker so spikes surface.
+            order = np.argsort(np.where(np.isnan(c), -np.inf, c), kind="stable")
+            xo, po, co = x[order], pres[order], c[order]
+            size = _CS_MARKER_SIZE / 2
+        else:
+            xo, po, co = x, pres, c
+            size = _CS_MARKER_SIZE
+
+        sc = ax_main.scatter(
+            xo, po, c=co, cmap=cmap, vmin=vmin, vmax=vmax, s=size, edgecolors="none"
+        )
+        #   Left strip: the vertical profile of the same variable (value vs depth).
+        ax_prof.scatter(
+            c, pres, c=c, cmap=cmap, vmin=vmin, vmax=vmax, s=2, edgecolors="none"
+        )
+
+        cbar = fig.colorbar(sc, cax=cax)
+        cbar.set_label(_var_label(data, cvar, panel["label"]), fontsize=7)
+        cbar.ax.tick_params(labelsize=6)
+
+        #   PRES axis lives on the profile strip; the main panel reuses it.
+        ax_prof.set_ylabel(_var_label(data, pres_name, pres_name), fontsize=7)
+        ax_prof.set_xlabel(panel["label"], fontsize=6)
+        ax_prof.xaxis.set_major_locator(MaxNLocator(3))
+        ax_prof.tick_params(labelsize=6)
+        ax_main.tick_params(labelleft=False)
+
+    #   Invert PRES once per row (surface at the top, depth at the bottom). Each
+    #   main panel shares Y with its profile strip, so inverting that suffices.
+    for ax in main_axes:
+        if not ax.yaxis_inverted():
+            ax.invert_yaxis()
+
+    #   Shared X is dates: only the bottom panel carries tick labels; upper
+    #   panels keep clean axes. The formatter adapts to the visible span.
+    span_days = 0.0
+    if np.isfinite(x).any():
+        span_days = float(np.nanmax(x) - np.nanmin(x))
+    for ax in main_axes:
+        ax.xaxis_date()
+    for ax in main_axes[:-1]:
+        ax.tick_params(labelbottom=False)
+    bottom = main_axes[-1]
+    bottom.xaxis.set_major_locator(mdates.AutoDateLocator())
+    bottom.xaxis.set_major_formatter(mdates.DateFormatter(_cs_date_format(span_days)))
+    bottom.tick_params(axis="x", labelsize=7)
+    bottom.set_xlabel(time_name, fontsize=8)
+
+    fname = outdir + "cross_section" + ext
+    plt.savefig(fname, dpi=200)
+    plt.close(fig)
+    return fname
+
+
+def cross_section_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None:
+    """Write the Cross Section Plots section (the full-page A4 cross-section figure).
+
+    Parameters
+    ----------
+    pdf : ReportPDF
+        The active PDF document being written to.
+    data : xarray.core.dataset.Dataset
+        The entire dataset, including attributes.
+    outdir : str
+        The path to write the figure to.
+    """
+    pdf.add_page()
+    pdf.section_heading("Cross Section Plots")
+    img = cross_section_figure(data, outdir)
+    if img is None:
+        pdf.body("No suitable TIME/PRES data available for cross-section plots.")
+        return
+    #   Cap the figure to the space left below the heading so the two stay on one
+    #   page (the figure is near-A4 height, so a full-width placement would
+    #   otherwise spill onto the next page and orphan the heading).
+    avail_h = pdf.page_break_trigger - pdf.get_y() - 2
+    pdf.image_fit(img, aspect=_image_aspect(img), max_h=avail_h)
+
+
 @register_step
 class WriteDataReportPython(BaseStep):
     """
@@ -1588,13 +1985,14 @@ class WriteDataReportPython(BaseStep):
 
     Base template:
     * Title page (incl. run provenance and pipeline name/description)
+    * Cross section plots (PRES vs TIME, coloured per variable)
     * Format Checker results (when that step ran)
     * Configuration
     * Quality control summary
     * Basic plots
     * Logfile
-    * Closing index (pelagos-py credit, QC flag glossary, variable index, \
-glider information)
+    * Closing index (contents/page index, pelagos-py credit, QC flag glossary, \
+variable index, glider information)
 
     Parameters
     ----------
@@ -1608,7 +2006,7 @@ glider information)
         uniquely named folder next to the report so successive runs don't
         overwrite each other.
     show_format_check, show_configuration, show_diagnostic_plots, show_qc_summary, \
-    show_qc_plots, show_logs, show_index : bool
+    show_qc_plots, show_cross_section_plots, show_logs, show_index : bool
         Toggles for the report's sections. All default to True; set any to False
         to omit that section from the report.
     """
@@ -1658,6 +2056,14 @@ glider information)
             "type": bool,
             "default": True,
             "description": "Include the QC histogram plots section.",
+        },
+        "show_cross_section_plots": {
+            "type": bool,
+            "default": True,
+            "description": (
+                "Include the cross-section plots section (a full-page A4 figure of "
+                "PRES vs TIME panels, each coloured by a variable)."
+            ),
         },
         "show_logs": {
             "type": bool,
@@ -1743,11 +2149,16 @@ glider information)
             )
             pdf.title_page()
 
-            #   Each section is optional and defaults on. Lead with the Format
-            #   Checker results (whenever that step ran), then the configuration,
+            #   Each section is optional and defaults on. Lead with the
+            #   cross-section plots (the headline view of the mission), then the
+            #   Format Checker results (whenever that step ran), the configuration,
             #   per-step diagnostics, QC summary, plots and logs. Close with a
             #   pelagos-py credit and an index (QC flag glossary, variable index
             #   and glider information).
+            if self.parameters.get("show_cross_section_plots", True):
+                self.log("Generating cross-section plots.")
+                cross_section_section(pdf, data, outdir=fig_dir)
+
             if (
                 self.parameters.get("show_format_check", True)
                 and "Format Checker" in step_names

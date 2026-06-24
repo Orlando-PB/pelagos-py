@@ -193,7 +193,7 @@ def test_qc_section(qc_dataset):
     wrp.qc_section(pdf, qc_dataset)
 
     pdf.add_page.assert_called_once()
-    pdf.h2.assert_called_once_with("Quality Control Summary")
+    pdf.section_heading.assert_called_once_with("Quality Control Summary")
     pdf.add_table.assert_called_once()
 
     headers = pdf.add_table.call_args[0][0]
@@ -224,7 +224,7 @@ def test_add_log(tmp_path):
     pdf = MagicMock()
     wrp.add_log(str(logfile), pdf)
 
-    pdf.h2.assert_called_once_with("Logfile of run")
+    pdf.section_heading.assert_called_once_with("Logfile of run")
     rows = pdf.terminal_block.call_args[0][0]
 
     #   Date stripped, pelagos_py. prefix removed.
@@ -260,7 +260,7 @@ def test_format_checker_section_json_file(tmp_path):
     #   No structured cc_results -> falls back to the saved JSON file.
     wrp.format_checker_section(pdf, cc_results=None, ccfile=str(ccfile))
 
-    pdf.h2.assert_called_once_with("Format Checker results")
+    pdf.section_heading.assert_called_once_with("Format Checker results")
     #   Known checker "og" -> OG1 label + docs link.
     label, url, score = pdf.cc_heading.call_args[0]
     assert label == "OG1"

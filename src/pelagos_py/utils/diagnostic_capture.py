@@ -28,6 +28,7 @@ import contextlib
 import functools
 import os
 
+import matplotlib
 import matplotlib.pyplot as plt
 
 
@@ -81,6 +82,20 @@ def capture_figures(outdir: str, step_name: str, images: list, suppress_text: bo
         _save_and_close_open_figures(outdir, step_name, images)
 
     plt.show = _capture_show
+
+    #   Figures captured for the report are saved, never displayed, so no GUI is
+    #   needed. Steps' diagnostics commonly call ``matplotlib.use("tkagg")`` to
+    #   force the interactive Tk backend; under report capture that is both
+    #   pointless and dangerous: instantiating a Tk canvas off the main thread
+    #   (e.g. when driven from an IDE/GUI) hard-crashes the process on Windows,
+    #   bypassing make_diagnostics_safe's try/except. Force the headless Agg
+    #   backend and neutralise matplotlib.use() for the duration so every step's
+    #   backend switch becomes a harmless no-op; both are restored on exit.
+    original_use = matplotlib.use
+    original_backend = matplotlib.get_backend()
+    matplotlib.use("Agg", force=True)
+    matplotlib.use = lambda *args, **kwargs: None
+
     try:
         with contextlib.ExitStack() as stack:
             if suppress_text:
@@ -89,8 +104,15 @@ def capture_figures(outdir: str, step_name: str, images: list, suppress_text: bo
             yield
     finally:
         plt.show = original_show
+        matplotlib.use = original_use
         #   Catch any figures a diagnostic left open without calling show().
         _save_and_close_open_figures(outdir, step_name, images)
+        #   Restore whatever backend was active before capture (best-effort:
+        #   never let backend restoration break the pipeline).
+        try:
+            matplotlib.use(original_backend, force=True)
+        except Exception:  # noqa: BLE001 - backend restore must never be fatal
+            pass
 
 
 def make_diagnostics_safe(step) -> None:
