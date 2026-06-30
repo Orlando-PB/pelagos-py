@@ -108,10 +108,10 @@ steps:
         # it has inherited QC via a combination of its parent variables QC, PRES & LATITUDE.
         flag_filter_settings:
           DEPTH: [3, 4, 9]
-      gradient_thresholds: [0.033, -0.033] # Cutoffs for defining minimum velocity for up & downcasts
-      filter_window_sizes: [20s, 20s] # Window sizes for median & mean smoothing
       depth_column: DEPTH
-    diagnostics: false # When true, this step plots an interacive window that allows parameter adjustment.
+      velocity_threshold: 0.033 # Minimum vertical velocity (m/s) to flag an up/down cast
+      time_window_seconds: 20 # Window (seconds) for resampling & smoothing depth/velocity
+    diagnostics: false # When true, this step plots a static phase-map + profile/cycle figure.
 
 # Now that profiles have been determined we should flag any that are too short or lack data at depth
   - name: Apply QC
@@ -122,10 +122,6 @@ steps:
             depth_range: [-1000, 0] # and must contain data within 0 and 1000 m
     diagnostics: true
 
-# Finally we add profile direction to the dataset. +1 is ascending and -1 is descending
-  - name: Find Profile Direction
-    parameters:
-    diagnostics: false
 
 # ------------------ SALINITY ADJUSTMENT --------------------
 # Now we move onto adjustment of the CNDC variable and subsequent salinity derivations

@@ -29,11 +29,59 @@ import matplotlib
 @register_qc
 class valid_profile_qc(BaseQC):
     """
-    Target Variable: PROFILE_NUMBER
-    Flag Number: 4 (bad data), 3 (potentially bad)
-    Variables Flagged: PROFILE_NUMBER
-    Checks that each profile is of a certain length (in number of points)
-    and contains points within a specified depth range.
+    Flag whole profiles that are too short or never reach a target depth range.
+
+    | **Target variable:** ``PROFILE_NUMBER``
+    | **Variables flagged:** ``PROFILE_NUMBER``
+    | **Flags applied:** 1 (good), 3 (probably bad), 4 (bad), 9 (missing)
+
+    Each profile (a group of measurements sharing a ``PROFILE_NUMBER``, as produced
+    by :doc:`Find Profiles <../processing/find_profiles/index>`) is assessed as a
+    whole and every row in that profile receives the same ``PROFILE_NUMBER_QC``:
+
+    - **9 (missing)** — the row has no profile (``PROFILE_NUMBER`` is NaN, e.g.
+      surfacing rows or data gaps).
+    - **4 (bad)** — the profile contains fewer than ``profile_length`` measurements.
+    - **3 (probably bad)** — the profile is long enough but has no measurement whose
+      ``DEPTH`` falls inside ``depth_range``.
+    - **1 (good)** — the profile passes both checks.
+
+    Only ``PROFILE_NUMBER_QC`` is written; the underlying data is never modified.
+
+    Parameters
+    ----------
+    profile_length : int, optional
+        Minimum number of measurements a profile must contain to be kept. Profiles
+        shorter than this are flagged bad (4). Default ``1000``.
+    depth_range : tuple of float, optional
+        ``(min, max)`` depth window (in the same units/sign convention as ``DEPTH``,
+        i.e. negative downward) that a profile must reach into. A profile with no data
+        inside this window is flagged probably bad (3). Default ``(-1000, 0)``.
+
+    Examples
+    --------
+    The check works with its defaults, so the minimal configuration sets no
+    parameters:
+
+    .. code-block:: yaml
+
+        - name: "Apply QC"
+          parameters:
+            qc_settings:
+              valid profile qc: {}
+
+    Both parameters may be tuned — here profiles must be at least 50 points long and
+    contain data somewhere between 1000 m depth and the surface:
+
+    .. code-block:: yaml
+
+        - name: "Apply QC"
+          parameters:
+            qc_settings:
+              valid profile qc:
+                profile_length: 50
+                depth_range: [-1000, 0]
+          diagnostics: true  # plot DEPTH vs index, coloured by the resulting flag
     """
 
     qc_name = "valid profile qc"
@@ -51,7 +99,9 @@ class valid_profile_qc(BaseQC):
         )
 
         # Check profiles are of a given length
-        profile_lengths = self.df.group_by("PROFILE_NUMBER").count()
+        profile_lengths = self.df.group_by("PROFILE_NUMBER").agg(
+            pl.len().alias("count")
+        )
         self.df = self.df.join(profile_lengths, on="PROFILE_NUMBER", how="left")
 
         # Find profiles that have no data between the sepcified depth ranges
