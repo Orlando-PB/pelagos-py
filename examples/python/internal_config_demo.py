@@ -1,19 +1,26 @@
 import yaml
-from pelagos_py.pipeline import Pipeline, _setup_logging
-
-# --- Configuration Variables ---
-INPUT_FILE = "/Users/orlpru/Desktop/OG1_Data/input/BIO-Carbon/Cabot_645.nc"
+from pelagos_py.pipeline import Pipeline
 
 BASE_CONFIG_YAML = """
 pipeline:
   name: Example CTD Processing Pipeline
   description: A pipeline for processing CTD data
   visualisation: false
+  log_file: None
 
 steps:
   - name: Load OG1
     parameters:
-      file_path: PLACEHOLDER
+      file_path: examples/data/OG1/Nelson_646_R.nc
+    diagnostics: false
+
+  - name: Correct Values
+    parameters:
+      target_variable: CNDC
+      slope: 10.0
+      intercept: 0.0
+      expected_range: [20, 45]
+      corrected_units: mS/cm
     diagnostics: false
 
   - name: Apply QC
@@ -27,21 +34,30 @@ steps:
   - name: Apply QC
     parameters:
       qc_settings:
-        impossible range qc:
+
+        range qc:
           variable_ranges:
             PRES:
-              3: [-5, -2.4]
-              4: [-.inf, -5]
+              3: [-2.4, -5]
+              4: [-5, -.inf]
+            TEMP:
+              3: [0, 30]
+              4: [-2.5, 40]
+            CNDC:
+              3: [5, 42]
+              4: [2, 45]
           also_flag:
             PRES: [CNDC, TEMP]
-          plot: [PRES]
+            CNDC: [PRES, TEMP]
+            TEMP: [PRES, CNDC]
+
         stuck value qc:
           variables:
             PRES: 2
           also_flag:
             PRES: [CNDC, TEMP]
           plot: [PRES]
-    diagnostics: false
+    diagnostics: true
 
   - name: Interpolate Data
     parameters:
@@ -56,17 +72,10 @@ steps:
   - name: Derive CTD
     parameters:
       to_derive: [DEPTH]
-    diagnostics: false
+    diagnostics: true
 
   - name: Find Profiles
-    diagnostics: false
-
-  - name: Apply QC
     parameters:
-      qc_settings:
-          valid profile qc:
-            profile_length: 50
-            depth_range: [-1000, 0]
     diagnostics: false
 
   - name: Salinity Adjustment
@@ -87,14 +96,14 @@ steps:
   - name: Derive CTD
     parameters:
       to_derive: [PRAC_SALINITY, ABS_SALINITY, CONS_TEMP, DENSITY]
-    diagnostics: false
+    diagnostics: true
 
   - name: Chla Deep Correction
     parameters:
       apply_to: CHLA
       dark_value: null
       depth_threshold: -550
-    diagnostics: false
+    diagnostics: true
 
   - name: Chla Quenching Correction
     parameters:
@@ -120,19 +129,8 @@ steps:
     diagnostics: false
 """
 
-try:
-    config = yaml.safe_load(BASE_CONFIG_YAML)
-    
-    for step in config.get("steps", []):
-        if step.get("name") == "Load OG1":
-            step["parameters"]["file_path"] = INPUT_FILE
 
-    p = Pipeline()
-    p.global_parameters = config.get("pipeline", {})
-    p.logger = _setup_logging() 
-    p.build_steps(config.get("steps", []))
-    
-    p.run()
-    
-except Exception as e:
-    print(f"\nPipeline Stopped: {e}")
+demo_config = yaml.safe_load(BASE_CONFIG_YAML)
+
+p = Pipeline(config=demo_config)
+p.run()

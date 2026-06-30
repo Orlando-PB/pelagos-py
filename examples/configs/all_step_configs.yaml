@@ -30,7 +30,8 @@ pipeline:
  out_directory: ./examples/data/
  # [log_file]: string name for the log file
  #   The name intended for the log file, helpful if running different pipelines and tracking performance.
- #   Default behavior overwrites the previous log file
+ #   Default behavior overwrites the previous log file.
+ #   Console logging is always on. If log_file is not set (or set to None/null), no log file is written.
  log_file: last_run.log
 
 # All step configs
@@ -84,6 +85,34 @@ steps:
       data_end: "2024-05-01T00:00:00"
     # [diagnostics]:
     #   Prints a summary of dataset variables and attributes
+    diagnostics: false
+
+# Correct Values (src/pelagos_py/steps/input_output/correct_values.py):
+#   Applies an affine correction (corrected = slope * value + intercept) to a single variable.
+#   Useful for unit conversions (e.g. CNDC S/m -> mS/cm is a simple x10) or sensor alignment.
+#   The shown config converts CNDC into the mS/cm expected by Derive CTD's GSW salinity calc.
+  - name: "Correct Values"
+    parameters:
+      # [target_variable]:
+      #   Name of the variable to correct.
+      target_variable: CNDC
+      # [slope]:
+      #   Multiplicative factor (corrected = slope * value + intercept). x10 for the S/m -> mS/cm conversion.
+      slope: 10.0
+      # [intercept]:
+      #   Additive offset applied after scaling. Use for sensor alignment; leave 0 for a pure unit conversion.
+      intercept: 0.0
+      # [expected_range]:
+      #   Optional [min, max] for the corrected variable. The correction is applied only when the data's
+      #   median falls OUTSIDE this range, so files already in the right units are left untouched.
+      #   Omit to always apply the correction.
+      expected_range: [20, 45]
+      # [corrected_units]:
+      #   Optional units string written to the variable's attributes after a correction. Leave blank to
+      #   keep the existing units.
+      corrected_units: mS/cm
+    # [diagnostics]:
+    #   Plots the raw vs corrected values with the expected-range limits.
     diagnostics: false
 
 # -------------------------------------------------------------------------------------------Prelim data check ------------------------------------------------------------------------------------------------
@@ -155,27 +184,34 @@ steps:
         #   Checks if the horizontal speed derived from LATITUDE, LONGITUDE and TIME is valid.
         impossible speed qc: {}
 
-        # range test (*/range_test.py):
+        # range test (*/range_qc.py):
         #   Flag: User-specified
-        #   Flags values that lie within the user-specified limits with the user-specified flag.
+        #   Flags values by range, per variable. Each band carries an inside/outside keyword:
+        #   [low, high, "outside"] is a band of GOOD values (data outside it is flagged);
+        #   [low, high, "inside"] is an IMPOSSIBLE band (data within it is flagged). A flag may
+        #   list several bands, e.g. 4: [[2, 3, inside], [0.1, 10, outside]]. If the keyword is
+        #   omitted, bound order is the fallback (ascending -> outside, descending -> inside).
+        #   A single scalar instead of a pair flags exact matches (handy for fill values).
+        #   Replaces the old separate 'gross range' (outside) and 'impossible range' (inside) tests.
         #   The results from one variable can be propagated onto other variables using "also_flag".
         #   This test can also be limited to specific depth ranges if DEPTH is in the dataset vars.
-        impossible range qc:
+        range qc:
           # [variable_ranges]:
-          #   variable: {flag: value range} pairs indicating what value ranges should be flagged.
-          #   Multiple variables can be specified - the flag updates are applied top-down.
+          #   variable: {flag: band} pairs. Multiple variables can be specified.
+          #   Here PRES uses 'inside', so PRES is flagged when it lies WITHIN the band.
           variable_ranges:
             PRES:
-              3: [-5, -2.4]
-              4: [-.inf, -5]
+              3: [-2.4, -5, inside]
+              4: [-5, -.inf, inside]
           # [also_flag]:
           #   Alows the QC result from one variable to be applied to others. eg. Often if PRES fails a
           #   range test, it is assumed that all CTD variables are no longer trustworthy.
+          #   Flags are merged onto companions (Argo matrix) so the worst flag wins.
           also_flag:
             PRES: [CNDC, TEMP]
-          # [plot]:
-          #   Plots data coloured by flag for the variables listed.
-          plot: [PRES]
+          # [diagnostics]:
+          #   When the Apply QC step has diagnostics enabled, every flagged variable is plotted
+          #   coloured by flag number (no separate 'plot' parameter is needed).
 
         # stuck value test (*/stuck_value_test.py):
         #   Flag: 4 (bad)
