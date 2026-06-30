@@ -170,6 +170,18 @@ class range_qc(BaseQC):
 
         self.tested_variables = list(self.variable_ranges.keys())
 
+        # Flags become QC values that Apply QC (and this class's also_flag
+        # propagation) merges via the Argo 10x10 matrix, so they must be integer
+        # indices 0-9. Validate up front to fail with a clear config error rather
+        # than an IndexError deep in return_qc.
+        for var, meta in self.variable_ranges.items():
+            for flag in meta:
+                if isinstance(flag, bool) or not isinstance(flag, int) or not (0 <= flag <= 9):
+                    raise ValueError(
+                        f"[{self.qc_name}] invalid QC flag {flag!r} for variable "
+                        f"{var!r}; expected an Argo QC flag 0-9."
+                    )
+
         self.required_variables = self.tested_variables.copy()
         if self.test_depth_range is not None:
             self.required_variables.append("DEPTH")
@@ -235,6 +247,11 @@ class range_qc(BaseQC):
                 )
             nums = nums[:-1]
 
+        if len(nums) != 2:
+            raise ValueError(
+                f"Invalid range band {band!r}; expected a scalar, [low, high], "
+                f"or [low, high, keyword]."
+            )
         a, b = nums
         if mode is None:
             mode = "outside" if a <= b else "inside"
