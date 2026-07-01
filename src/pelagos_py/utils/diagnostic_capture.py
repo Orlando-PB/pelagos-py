@@ -135,12 +135,15 @@ def capture_figures(
     if interactive:
         #   Switch this step to the interactive Tk backend so its figure can be
         #   displayed. ``matplotlib.use`` is neutralised for the run, so switch
-        #   via pyplot directly. Best-effort: if the GUI backend is unavailable
-        #   we fall through and the save-only behaviour below still runs.
-        try:
-            plt.switch_backend("tkagg")
-        except Exception:  # noqa: BLE001 - never let a backend switch be fatal
-            interactive = False
+        #   via pyplot directly.
+        #
+        #   NOTE: deliberately NOT wrapped in try/except. If the Tk backend
+        #   cannot be loaded (e.g. the known Windows crash) this must fail loudly
+        #   so the underlying problem is visible and can be fixed. Do NOT add a
+        #   fallback that degrades to save-only / headless here: a silent
+        #   fallback hides whether the backend is actually working and makes the
+        #   bug look "fixed" when it is not.
+        plt.switch_backend("tkagg")
 
     def _capture_show(*args, **kwargs):
         if interactive:
