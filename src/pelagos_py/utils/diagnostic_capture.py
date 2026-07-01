@@ -32,12 +32,48 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 
-def _save_and_close_open_figures(outdir: str, step_name: str, images: list) -> None:
-    """Save every open matplotlib figure to ``outdir`` and close it.
+@contextlib.contextmanager
+def force_headless_backend():
+    """Force the headless Agg backend for the whole report run.
+
+    Report figures are saved to disk, never displayed, so no GUI backend is
+    needed. Steps' diagnostics commonly call ``matplotlib.use("tkagg")`` to
+    force the interactive Tk backend; under report capture that is both
+    pointless and dangerous - instantiating a Tk canvas off the main thread
+    (e.g. when driven from an IDE/GUI) can hard-crash the process on Windows.
+
+    The backend is switched to Agg exactly once here and ``matplotlib.use()`` is
+    neutralised for the duration, so every step's backend switch becomes a
+    harmless no-op and the backend is never toggled mid-run (repeated
+    ``use(..., force=True)`` re-initialises matplotlib's compiled backend, which
+    can trigger a fatal delay-load crash on Windows). Both are restored on exit.
+    """
+    original_use = matplotlib.use
+    original_backend = matplotlib.get_backend()
+    matplotlib.use("Agg", force=True)
+    matplotlib.use = lambda *args, **kwargs: None
+    try:
+        yield
+    finally:
+        matplotlib.use = original_use
+        #   Best-effort restore: never let backend restoration break the run.
+        try:
+            matplotlib.use(original_backend, force=True)
+        except Exception:  # noqa: BLE001 - backend restore must never be fatal
+            pass
+
+
+def _save_open_figures(
+    outdir: str, step_name: str, images: list, close: bool = True
+) -> None:
+    """Save every open matplotlib figure to ``outdir`` for the report.
 
     Each saved path is appended to ``images``. Saving failures are swallowed so
-    capturing a diagnostic can never interrupt the pipeline; the figure is always
-    closed so figures are neither displayed nor leaked between steps.
+    capturing a diagnostic can never interrupt the pipeline. When ``close`` is
+    ``True`` each figure is closed after saving so figures are neither displayed
+    nor leaked between steps; when ``False`` the figures are left open so they
+    can still be shown interactively afterwards (used for steps the user
+    explicitly enabled diagnostics on).
     """
     safe = step_name.replace(os.sep, "_").replace(" ", "_")
     for num in plt.get_fignums():
@@ -49,17 +85,23 @@ def _save_and_close_open_figures(outdir: str, step_name: str, images: list) -> N
         except Exception:  # noqa: BLE001 - a capture failure must never be fatal
             pass
         finally:
-            plt.close(fig)
+            if close:
+                plt.close(fig)
 
 
 @contextlib.contextmanager
-def capture_figures(outdir: str, step_name: str, images: list, suppress_text: bool = False):
-    """Redirect ``plt.show`` so diagnostic figures are saved instead of displayed.
+def capture_figures(
+    outdir: str,
+    step_name: str,
+    images: list,
+    suppress_text: bool = False,
+    interactive: bool = False,
+):
+    """Redirect ``plt.show`` so diagnostic figures are saved for the report.
 
     Within the context, every ``plt.show`` call (and any figures still open when
     the context exits) is written to ``outdir`` and its path recorded in
-    ``images``. Figures are closed so nothing is shown interactively and figures
-    do not leak between steps.
+    ``images``.
 
     Parameters
     ----------
@@ -75,26 +117,46 @@ def capture_figures(outdir: str, step_name: str, images: list, suppress_text: bo
         report: a step whose diagnostics are textual (``print`` rather than a
         plot, e.g. the dataset summary from Load Data) would otherwise dump that
         text to the console even though the user never enabled diagnostics.
+    interactive : bool, optional
+        When ``False`` (default) figures are saved and closed silently - no
+        window is shown. This is used for steps whose diagnostics were
+        force-enabled only to harvest figures for the report, and keeps the run
+        headless (Agg) and Windows-safe.
+
+        When ``True`` (the user explicitly set ``diagnostics: true`` on this
+        step) the figure is saved to the report *and* shown in a blocking popup,
+        so the pipeline pauses on that step exactly as it would outside a report
+        run. This temporarily switches to the interactive Tk backend for the
+        duration of the step and switches back to headless Agg afterwards; the
+        GUI backend is the reason this path is opt-in only.
     """
     original_show = plt.show
 
+    if interactive:
+        #   Switch this step to the interactive Tk backend so its figure can be
+        #   displayed. ``matplotlib.use`` is neutralised for the run, so switch
+        #   via pyplot directly. Best-effort: if the GUI backend is unavailable
+        #   we fall through and the save-only behaviour below still runs.
+        try:
+            plt.switch_backend("tkagg")
+        except Exception:  # noqa: BLE001 - never let a backend switch be fatal
+            interactive = False
+
     def _capture_show(*args, **kwargs):
-        _save_and_close_open_figures(outdir, step_name, images)
+        if interactive:
+            #   Save into the report first (leaving the figures open), then show
+            #   them in a blocking window so the user sees the plot and the
+            #   pipeline pauses. Close afterwards so figures don't leak.
+            _save_open_figures(outdir, step_name, images, close=False)
+            try:
+                original_show(*args, **{**kwargs, "block": True})
+            finally:
+                for num in plt.get_fignums():
+                    plt.close(num)
+        else:
+            _save_open_figures(outdir, step_name, images, close=True)
 
     plt.show = _capture_show
-
-    #   Figures captured for the report are saved, never displayed, so no GUI is
-    #   needed. Steps' diagnostics commonly call ``matplotlib.use("tkagg")`` to
-    #   force the interactive Tk backend; under report capture that is both
-    #   pointless and dangerous: instantiating a Tk canvas off the main thread
-    #   (e.g. when driven from an IDE/GUI) hard-crashes the process on Windows,
-    #   bypassing make_diagnostics_safe's try/except. Force the headless Agg
-    #   backend and neutralise matplotlib.use() for the duration so every step's
-    #   backend switch becomes a harmless no-op; both are restored on exit.
-    original_use = matplotlib.use
-    original_backend = matplotlib.get_backend()
-    matplotlib.use("Agg", force=True)
-    matplotlib.use = lambda *args, **kwargs: None
 
     try:
         with contextlib.ExitStack() as stack:
@@ -104,15 +166,16 @@ def capture_figures(outdir: str, step_name: str, images: list, suppress_text: bo
             yield
     finally:
         plt.show = original_show
-        matplotlib.use = original_use
-        #   Catch any figures a diagnostic left open without calling show().
-        _save_and_close_open_figures(outdir, step_name, images)
-        #   Restore whatever backend was active before capture (best-effort:
-        #   never let backend restoration break the pipeline).
-        try:
-            matplotlib.use(original_backend, force=True)
-        except Exception:  # noqa: BLE001 - backend restore must never be fatal
-            pass
+        #   Catch any figures a diagnostic left open without calling show()
+        #   (headless: never display these, just save them).
+        _save_open_figures(outdir, step_name, images, close=True)
+        if interactive:
+            #   Return to the headless Agg backend forced for the rest of the
+            #   run, so only opt-in steps ever touch the GUI backend.
+            try:
+                plt.switch_backend("agg")
+            except Exception:  # noqa: BLE001 - never let a backend switch be fatal
+                pass
 
 
 def make_diagnostics_safe(step) -> None:
