@@ -51,7 +51,7 @@ def running_average_nan(arr: np.ndarray, window_size: int) -> np.ndarray:
     sum_vals = np.convolve(np.nan_to_num(padded), kernel, mode="valid")
     count_vals = np.convolve(~np.isnan(padded), kernel, mode="valid")
 
-    # Compute the moving average, handling NaNs properly and preventing unitialised memory warnings
+    # Compute the moving average, handling NaNs properly and preventing uninitialised memory warnings
     avg = np.divide(
         sum_vals,
         count_vals,
@@ -304,7 +304,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         # span and count) to find how many profiles qualify, so the bar total matches what
         # will actually be processed and reaches 100%.
         time_arr = self.data[self.time_col].values
-        finite = ~pd.isnull(time_arr) & ~np.isnan(prof_arr)
+        finite = ~pd.isnull(time_arr) & ~pd.isnull(prof_arr)
         grouped_times = pd.Series(time_arr[finite]).groupby(prof_arr[finite])
         durations = grouped_times.max() - grouped_times.min()
         counts = grouped_times.count()
@@ -333,7 +333,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
             valid_times = profile[self.time_col].dropna(dim="N_MEASUREMENTS")
 
             if len(valid_times) > 0:
-                duration = valid_times[-1] - valid_times[0]
+                duration = valid_times.values[-1] - valid_times.values[0]
 
                 if duration >= np.timedelta64(1, "h") and len(valid_times) > 3 * filter_size:
                     if getattr(self, "diagnostics", False) and self._ct_cost_data is None:
@@ -444,7 +444,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
             )
 
             # Resample the data onto a 1Hz sample rate timeseries
-            TIME_1Hz_sampling = np.arange(0, data_subset["ELAPSED_TIME[s]"][-1], 1)
+            TIME_1Hz_sampling = np.arange(0, data_subset["ELAPSED_TIME[s]"].values[-1], 1)
             if len(TIME_1Hz_sampling) < 2:
                 continue
             TEMP_1Hz_sampling = TEMP_from_TIME(TIME_1Hz_sampling)
@@ -538,7 +538,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
 
         # --- Data Preparation ---
         prof_arr = self.data["PROFILE_NUMBER"].values
-        unique_profs = np.unique(prof_arr[~np.isnan(prof_arr)])
+        unique_profs = np.unique(prof_arr[~pd.isnull(prof_arr)])
 
         plot_qc_mask = xr.ones_like(self.data_copy["PROFILE_NUMBER"], dtype=bool)
         for var in ["TEMP", "CNDC", "PRES", "DEPTH", self.time_col]:

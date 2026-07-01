@@ -62,7 +62,7 @@ steps:
           also_flag:
             PRES: [CNDC, TEMP]
           plot: [PRES]
-    diagnostics: false
+    diagnostics: true
 
   - name: Interpolate Data
     parameters:
@@ -101,7 +101,7 @@ steps:
   - name: Derive CTD
     parameters:
       to_derive: [PRAC_SALINITY, ABS_SALINITY, CONS_TEMP, DENSITY]
-    diagnostics: false
+    diagnostics: true
 
   - name: Chla Deep Correction
     parameters:
