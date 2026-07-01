@@ -26,6 +26,7 @@ import logging
 import datetime as _dt
 import difflib
 import contextlib
+import faulthandler
 import shutil
 import tempfile
 
@@ -128,6 +129,26 @@ def _setup_logging(out_dir=None, log_file=None, level=logging.INFO):
     return logger
 
 
+def _enable_faulthandler(logger):
+    """
+    Enable :mod:`faulthandler` so hard crashes print a native traceback.
+
+    Some diagnostic plotting paths instantiate a GUI backend (e.g. Tk) off the
+    main thread, which can abort the process outright on Windows - a fatal
+    error that never raises a Python exception, so it is invisible to
+    ``try/except`` and the pipeline just stops with no message. faulthandler
+    installs a low-level handler (SIGSEGV/SIGABRT/etc. on POSIX, an
+    unhandled-exception filter on Windows) that dumps the native traceback of
+    every thread to stderr before the process dies, so the crash site is at
+    least visible in the console.
+    """
+    faulthandler.enable(all_threads=True)
+    logger.info(
+        "Crash diagnostics enabled: a native traceback will be printed to "
+        "the console if the process dies without a Python exception."
+    )
+
+
 class Pipeline(ConfigMirrorMixin):
     """
     Pipeline that manages a sequence of processing steps.
@@ -189,6 +210,7 @@ class Pipeline(ConfigMirrorMixin):
             self.global_parameters.get("out_directory"),
             self.global_parameters.get("log_file"),
         )
+        _enable_faulthandler(self.logger)
 
         if has_config:
             # build steps from loaded config
