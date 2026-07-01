@@ -331,6 +331,10 @@ class Pipeline(ConfigMirrorMixin):
                     # its textual diagnostics (e.g. the dataset summary) to the
                     # console.
                     suppress_text=not user_diagnostics,
+                    # Steps the user explicitly enabled diagnostics on still get
+                    # their interactive blocking popup (in addition to being
+                    # saved into the report); force-captured steps stay headless.
+                    interactive=user_diagnostics,
                 )
                 if capture
                 else contextlib.nullcontext()
@@ -403,9 +407,18 @@ class Pipeline(ConfigMirrorMixin):
                 "may run more slowly than usual."
             )
 
+        # When capturing for the report, force the headless Agg backend once for
+        # the whole run (see force_headless_backend). Toggling the backend per
+        # step can hard-crash on Windows, so it stays on Agg start to finish.
+        backend_ctx = (
+            diagnostic_capture.force_headless_backend()
+            if report_present
+            else contextlib.nullcontext()
+        )
         try:
-            for step in self.steps:
-                self._context = self.execute_step(step, self._context)
+            with backend_ctx:
+                for step in self.steps:
+                    self._context = self.execute_step(step, self._context)
         finally:
             if report_present:
                 #   Figures have been embedded by the report writer by now.
