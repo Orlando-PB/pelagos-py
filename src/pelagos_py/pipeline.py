@@ -72,8 +72,13 @@ def _setup_logging(out_dir=None, log_file=None, level=logging.INFO):
     logger.setLevel(level)
     logger.propagate = False
 
-    if logger.handlers:
-        return logger  # already configured
+    # Reconfigure from scratch each call so the latest pipeline's config is
+    # honoured. Without this, a console-only logger configured by an earlier
+    # Pipeline() in the same process would block a later Pipeline(config_path=...)
+    # from ever adding its requested file handler.
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+        handler.close()
 
     formatter = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
