@@ -170,7 +170,6 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
         # requirements are checked by Apply QC at run time, where _QC columns and
         # also_flag propagation are resolved.)
         if step_name == "Apply QC":
-            qc_step_outputs = set()
             for qc_name, qc_params in (parameters.get("qc_settings") or {}).items():
                 qc_class = QC_CLASSES.get(qc_name)
                 if qc_class is None:
@@ -227,7 +226,6 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
                 # is left for the run-time check, so file-native variables (e.g.
                 # DOWNWELLING_PAR) are not falsely flagged.
                 qc_required, qc_outputs = _qc_test_io(qc_class, qc_params)
-                qc_step_outputs.update(qc_outputs)
                 out_of_order = [
                     v
                     for v in qc_required
@@ -248,7 +246,11 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
                         f"steps so they run beforehand."
                     )
 
-            available_vars.update(qc_step_outputs)
+                # Make this test's outputs available to later tests in the same
+                # Apply QC call, so a test that legitimately depends on an earlier
+                # test's output (e.g. a profile-level test needing TEMP_QC) is not
+                # falsely flagged as depending on a later step.
+                available_vars.update(qc_outputs)
 
         req_vars = list(getattr(step_class, "required_variables", []))
         provided_vars = getattr(step_class, "provided_variables", []) + getattr(

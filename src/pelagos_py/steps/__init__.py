@@ -39,6 +39,7 @@ from pelagos_py.steps.base_qc import REGISTERED_QC
 logger = logging.getLogger("pelagos_py.pipeline.discovery")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
+    logger.propagate = False  #   Avoid duplicate lines if the app configures root logging
     _ch = logging.StreamHandler()
     _ch.setFormatter(
         logging.Formatter(

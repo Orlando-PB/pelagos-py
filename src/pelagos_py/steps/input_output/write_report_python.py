@@ -1308,8 +1308,8 @@ def qc_hist(
     ylims = [1, data[var].size]  #   Log axis cannot be 0
     if any(y < 1 for y in ylims):
         raise ValueError
-    if bins == None:  #   If not specified, center the bins around each flag integer
-        bins = np.arange(len(hislim)) - 0.5
+    if bins is None:  #   If not specified, center the bins around each flag integer
+        bins = np.arange(len(hislim) + 1) - 0.5
 
     #   Plot the source variable using xarray.plot for speed.
     #   If all NaN, clarify that on the plot.
