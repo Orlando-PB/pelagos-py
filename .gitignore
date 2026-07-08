@@ -107,3 +107,4 @@ cython_debug/
 *.mo
 *.pot
 src/pelagos_py/_version.py
+.vscode/
