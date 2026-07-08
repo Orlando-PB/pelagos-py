@@ -60,7 +60,21 @@ PHASE_NAMES = {
 # Core Processing Logic
 # ---------------------------------------------------------------------------
 
-def find_profiles(df_raw, depth_col, time_window_seconds, target_transect_phase, 
+def _ols_slope(x, y):
+    """Closed-form degree-1 slope, in place of ``np.polyfit(x, y, 1)``.
+
+    ``np.polyfit`` routes through ``numpy.linalg.lstsq``'s SVD-based solver,
+    which has been observed to hard-crash the process (native abort, no
+    Python exception) on some Windows/OpenBLAS builds when given degenerate
+    input (e.g. near-duplicate x-values). A plain OLS formula avoids that
+    codepath entirely for what is only ever a 1D slope.
+    """
+    x = x - x.mean()
+    denom = (x * x).sum()
+    return float((x * (y - y.mean())).sum() / denom) if denom else 0.0
+
+
+def find_profiles(df_raw, depth_col, time_window_seconds, target_transect_phase,
                   velocity_threshold, acceleration_threshold, transition_buffer_seconds, 
                   min_duration_minutes, peak_prominence, min_samples_between_peaks, 
                   gap_threshold_minutes, surface_depth, surfacing_threshold,
@@ -236,7 +250,7 @@ def find_profiles(df_raw, depth_col, time_window_seconds, target_transect_phase,
         z = depth[s:e]
         
         # Fit a linear trend to check the gradient over the parking block
-        m, _ = np.polyfit(t_sec - t_sec[0], z, 1)
+        m = _ols_slope(t_sec, z)
         
         if abs(m) > parking_gradient_threshold:
             # Overwrite the phase: 2 (Descent) if gradient is positive (going down), 1 (Ascent) if negative
@@ -354,7 +368,7 @@ def find_profiles(df_raw, depth_col, time_window_seconds, target_transect_phase,
         x = (group["TIME"] - group["TIME"].iloc[0]).dt.total_seconds().values
         y = group[depth_col].values
         if len(x) > 1:
-            m, _ = np.polyfit(x, y, 1)
+            m = _ols_slope(x, y)
             pnum = group["PROFILE_NUMBER"].iloc[0]
             mapped_df.loc[mapped_df["PROFILE_NUMBER"] == pnum, "GRADIENT"] = m
 

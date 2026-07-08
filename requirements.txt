@@ -10,7 +10,7 @@ numcodecs
 gsw
 geopy
 scikit-learn
-matplotlib
+matplotlib==3.11.0
 seaborn
 requests
 graphviz
