@@ -379,7 +379,7 @@ def test_write_data_report_python_missing_dataset_id(tmp_path, qc_dataset):
         step.run()
 
     step.log_warn.assert_any_call(
-        "Dataset ID missing from OG1 file. Reporting with unk platform information."
+        "Dataset ID missing from OG1 file. Reporting with unknown platform information."
     )
     #   A placeholder ID is stamped onto the dataset for downstream sections.
     assert qc_dataset.attrs["dataset_id"] == wrp.UNKNOWN_DATASET_ID
