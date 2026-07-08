@@ -1729,7 +1729,7 @@ class WriteDataReportPython(BaseStep):
         has_dataset_id = bool(data.attrs.get("dataset_id"))
         if not has_dataset_id:
             self.log_warn(
-                "Dataset ID missing from OG1 file. Reporting with unk platform information."
+                "Dataset ID missing from OG1 file. Reporting with unknown platform information."
             )
             data.attrs["dataset_id"] = UNKNOWN_DATASET_ID
         subtitle = f"Dataset ID: {data.attrs['dataset_id']}" if has_dataset_id else None
