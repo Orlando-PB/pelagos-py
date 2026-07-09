@@ -185,11 +185,39 @@ class LoadOG1(BaseStep):
         self.context["global_parameters"]["filename_core"] = Path(self.file_path).stem
         self.context["global_parameters"]["source_file"] = self.file_path
 
+        self.normalise_qc_flags()
+
         if self.diagnostics:
             self.generate_diagnostics()
 
         self.context["data"] = self.data
         return self.context
+
+    def normalise_qc_flags(self):
+        """
+        Coerce QC flag variables to integers, mapping NaN to 9 (missing).
+
+        Raw OG1 files store QC flags as float with NaN (which lines up with
+        missing measurements). Downstream steps use flags as integer array
+        indices / dict keys, so normalise them once at load rather than having
+        each step guard against float NaN flags.
+        """
+        qc_vars = [v for v in self.data.data_vars if v.endswith("_QC")]
+        normalised = []
+        for var in qc_vars:
+            flags = self.data[var]
+            if flags.dtype.kind != "f":
+                continue
+            # int8 is plenty for flags 0-9 and keeps QC arrays small.
+            self.data[var] = flags.fillna(9).astype(np.int8)
+            normalised.append(var)
+
+        if normalised:
+            self.log_warn(
+                f"{len(normalised)} QC flag variable(s) were stored as float with "
+                "NaN values; normalised to integer (NaN flags mapped to 9/missing). "
+                f"Affected: {', '.join(sorted(normalised))}."
+            )
 
     def generate_diagnostics(self):
         """
