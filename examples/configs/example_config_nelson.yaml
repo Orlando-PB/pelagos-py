@@ -176,12 +176,13 @@ steps:
 # fluorescence measured deep down where there should be no chlorophyll, so it is
 # subtracted from the whole profile. Here dark_value is null, so it is computed
 # from the data using only measurements below depth_threshold.
-  - name: Chla Deep Correction
+  - name: Deep Correction
     parameters:
       apply_to: CHLA           # Variable to correct
       dark_value: null         # null -> compute the dark offset from the data
-      depth_threshold: -550    # Only use data below this depth to estimate the dark value
-    diagnostics: false          # Plot the computed dark value and corrected profiles
+      depth_var: PRES          # Vertical coordinate used to find deep data (deeper = larger)
+      depth_threshold: 950     # Only use data where depth_var exceeds this to estimate the dark value
+    diagnostics: false          # Plot the deep profiles used and values before/after correction
 
 # Second, a non-photochemical quenching (NPQ) correction. Near the surface,
 # daylight suppresses fluorescence, so chlorophyll reads artificially low. The

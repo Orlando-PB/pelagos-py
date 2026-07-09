@@ -18,6 +18,7 @@ Non-specific Steps
 These steps are general utility tools used for data management, preparation, and export. They are not tied to a specific sensor or variable.
 
 * :doc:`Apply QC <api/pelagos_py/steps/quality_control/apply_qc/index>`: A container step used to run various quality control.
+* :doc:`Deep Correction <api/pelagos_py/steps/processing/deep_correction/index>`: Subtracts a deep dark offset from a variable (e.g. chlorophyll fluorescence).
 * :doc:`Derive CTD <api/pelagos_py/steps/processing/derive_ctd/index>`: Calculates derived physical properties such as density or potential temperature.
 * :doc:`Export <api/pelagos_py/steps/input_output/export/index>`: Saves the final processed dataset to a specified format.
 * :doc:`Find Profiles <api/pelagos_py/steps/processing/find_profiles/index>`: Segments a time series into individual vertical profiles.

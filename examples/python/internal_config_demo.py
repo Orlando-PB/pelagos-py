@@ -62,7 +62,7 @@ steps:
           also_flag:
             PRES: [CNDC, TEMP]
           plot: [PRES]
-    diagnostics: true
+    diagnostics: false
 
   - name: Interpolate Data
     parameters:
@@ -101,13 +101,14 @@ steps:
   - name: Derive CTD
     parameters:
       to_derive: [PRAC_SALINITY, ABS_SALINITY, CONS_TEMP, DENSITY]
-    diagnostics: true
+    diagnostics: false
 
-  - name: Chla Deep Correction
+  - name: Deep Correction
     parameters:
       apply_to: CHLA
       dark_value: null
-      depth_threshold: -550
+      depth_var: PRES
+      depth_threshold: 950
     diagnostics: true
 
   - name: Chla Quenching Correction

@@ -444,9 +444,9 @@ steps:
 # Note that the variables added to the dataset by these steps will appear as <input>_ADJUSTED unless
 # <input> already has the _ADJUSTED suffix, in which case, the input will be modified inplace.
 
-# Chla Deep Correction (src/pelagos_py/steps/processing/chla.py -> chla_deep_correction):
-# Subtracts a constant value from the data so that deep CHLA values are zeroed.
-  - name: "Chla Deep Correction"
+# Deep Correction (src/pelagos_py/steps/processing/deep_correction.py -> deep_correction):
+# Subtracts a constant dark offset so that deep, signal-free values are zeroed.
+  - name: "Deep Correction"
     parameters:
       # [apply_to]:
       #   Name of the variable to apply the correction to.
@@ -454,11 +454,26 @@ steps:
       # [dark_value]:
       #   If null, the dark value will be detemined from the data, else it will use the specified value
       dark_value: null
+      # [depth_var]:
+      #   Vertical-coordinate variable used to find deep data (deeper = larger value).
+      depth_var: PRES
       # [depth_threshold]:
-      #   Data used for calculating the dark value will only be taken from below this depth.
-      depth_threshold: -550
+      #   Only data where depth_var exceeds this is used to compute the dark value.
+      depth_threshold: 950
+      # [n_profiles]:
+      #   Number of deep profiles (in order of occurrence) used to estimate the dark value.
+      n_profiles: 5
+      # [smoothing_window]:
+      #   Rolling-median window (points) applied along each profile before sampling.
+      smoothing_window: 5
+      # [max_valid_value]:
+      #   Deep values at or above this are ignored (guards against non-dark readings).
+      max_valid_value: 5
+      # [min_valid_points]:
+      #   A profile must have at least this many valid deep points to contribute.
+      min_valid_points: 3
     # [diagnostics]:
-    #   Create a plot showing CHLA values over depth with lines for the dark value and depth threshold
+    #   Plot the deep profiles used and the deep values before/after correction.
     diagnostics: false
 
 # Chla Quenching Correction (src/pelagos_py/steps/processing/chla.py -> chla_quenching_correction):
