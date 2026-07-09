@@ -24,13 +24,30 @@ and to instantiate them in a config-aware way.
 import os
 import importlib
 import pathlib
+import time
 import yaml
+from pelagos_py.utils.yaml_loading import safe_load as yaml_safe_load
 import logging
 from pelagos_py.steps.base_step import REGISTERED_STEPS
 from pelagos_py.steps.base_qc import REGISTERED_QC
 
-# Setup logger for discovery
+# Setup logger for discovery. A console handler is attached here (rather than
+# left to Pipeline._setup_logging) because discover_steps() runs at import
+# time, before a Pipeline object exists to configure logging -- without this,
+# the import-time module scan (which can take several seconds due to heavy
+# step dependencies) is completely silent.
 logger = logging.getLogger("pelagos_py.pipeline.discovery")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    logger.propagate = False  #   Avoid duplicate lines if the app configures root logging
+    _ch = logging.StreamHandler()
+    _ch.setFormatter(
+        logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+            "%Y-%m-%d %H:%M:%S",
+        )
+    )
+    logger.addHandler(_ch)
 
 # Global registries
 STEP_CLASSES = {}
@@ -47,6 +64,8 @@ def discover_steps():
     base_dir = pathlib.Path(__file__).parent.resolve()
     logger.info("Scanning for step modules in %s", base_dir)
 
+    discovery_start = time.time()
+    failed_modules = []
     for py_file in base_dir.rglob("*.py"):
         if py_file.name == "__init__.py":
             continue
@@ -57,20 +76,41 @@ def discover_steps():
             ("pelagos_py.steps",) + relative_path.with_suffix("").parts
         )
 
+        module_start = time.time()
         try:
-            logger.info("Importing step module: %s", module_name)
             importlib.import_module(module_name)
         except Exception as e:
             logger.error("Failed to import %s: %s", module_name, e)
+            failed_modules.append(module_name)
+            continue
+        elapsed = time.time() - module_start
+        logger.info("Imported step module: %s (%.2fs)", module_name, elapsed)
 
-    # Populate global step class map
+    logger.info(
+        "Finished importing step modules in %.2fs", time.time() - discovery_start
+    )
+
+    # Populate global step class map. Importing the modules above is what's
+    # slow (it runs each module's top-level code, including its dependency
+    # imports) and is what actually registers each class (via @register_step,
+    # which fires at class-definition time); this is just copying the
+    # already-registered classes into the public dicts.
     STEP_CLASSES.update(REGISTERED_STEPS)
-    for step_name in STEP_CLASSES:
-        logger.info("Registered step: %s", step_name)
-
     QC_CLASSES.update(REGISTERED_QC)
-    for qc_name in QC_CLASSES:
-        logger.info("Registered QC test: %s", qc_name)
+    if failed_modules:
+        logger.warning(
+            "Registered %d steps and %d QC tests; %d module(s) failed to import: %s",
+            len(STEP_CLASSES),
+            len(QC_CLASSES),
+            len(failed_modules),
+            ", ".join(failed_modules),
+        )
+    else:
+        logger.info(
+            "Registered %d steps and %d QC tests successfully",
+            len(STEP_CLASSES),
+            len(QC_CLASSES),
+        )
 
 
 # Auto-discover steps when pelagos_py.steps is imported
@@ -99,7 +139,7 @@ def create_step(step_config, context=None):
         if not os.path.exists(step_config):
             raise FileNotFoundError(f"Step config file not found: {step_config}")
         with open(step_config, "r") as f:
-            step_config = yaml.safe_load(f) or {}
+            step_config = yaml_safe_load(f) or {}
         if "name" not in step_config:
             raise ValueError(f"Invalid step YAML: missing 'name' key -> {step_config}")
 

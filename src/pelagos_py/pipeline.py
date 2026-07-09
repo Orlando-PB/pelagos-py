@@ -25,10 +25,17 @@ import time
 import logging
 import datetime as _dt
 import difflib
+import contextlib
+import shutil
+import tempfile
 
 from pelagos_py.utils.config_mirror import ConfigMirrorMixin
 from pelagos_py.utils.valid_config_check import check_pipeline_variables
 from pelagos_py.utils.log_levels import STOP
+from pelagos_py.utils import diagnostic_capture
+
+REPORT_STEP_NAME = "Write Data Report (Python)"
+"""Name of the report step that triggers background diagnostic capture."""
 
 from pelagos_py.steps import create_step, STEP_CLASSES
 
@@ -280,21 +287,77 @@ class Pipeline(ConfigMirrorMixin):
         """
         step_context = _context.copy() if _context else {}
         step_context["global_parameters"] = self.global_parameters
+        #   Expose the full run configuration (pipeline block + ordered steps)
+        #   so steps such as the report writer can reproduce it. Rebuilt from
+        #   the canonical step list rather than the raw file so it is available
+        #   whether the pipeline was loaded from YAML or assembled in memory,
+        #   and is free of comments/blank lines.
+        step_context["pipeline_config"] = {
+            "pipeline": dict(self.global_parameters),
+            "steps": [
+                {"name": s["name"], "parameters": s.get("parameters", {})}
+                | ({"diagnostics": s["diagnostics"]} if s.get("diagnostics") else {})
+                for s in self.steps
+            ],
+        }
+
+        # When a report step is in the pipeline, expose the running list of
+        # captured diagnostic figures so the report writer can embed them.
+        capture = getattr(self, "_capture_diagnostics", False)
+        if capture:
+            step_context["captured_diagnostics"] = self._captured_figures
+
         step = create_step(step_config, step_context)
         self.logger.info(f"Executing: {step.name}")
 
+        # The user's own diagnostics setting drives interactive display and
+        # performance logging. Capture mode additionally force-enables the
+        # diagnostic code path so its figures can be saved for the report,
+        # without otherwise changing how the step reports performance.
+        user_diagnostics = step.diagnostics
+        captured_images = []
+        if capture:
+            step.diagnostics = True
+            diagnostic_capture.make_diagnostics_safe(step)
+
         try:
-            if step.diagnostics:
+            capture_ctx = (
+                diagnostic_capture.capture_figures(
+                    self._capture_dir,
+                    step.name,
+                    captured_images,
+                    # Diagnostics were force-enabled only to capture figures for
+                    # the report; a step the user did not opt into must not dump
+                    # its textual diagnostics (e.g. the dataset summary) to the
+                    # console.
+                    suppress_text=not user_diagnostics,
+                    # Steps the user explicitly enabled diagnostics on still get
+                    # their interactive blocking popup (in addition to being
+                    # saved into the report); force-captured steps stay headless.
+                    interactive=user_diagnostics,
+                )
+                if capture
+                else contextlib.nullcontext()
+            )
+
+            if user_diagnostics:
                 # Time the processing only. When a step generates diagnostics,
                 # BaseStep stops the timer (report_performance) as plotting
                 # begins, so a blocking plot left open isn't counted. This call
                 # is the idempotent fallback for steps that produce no plot.
                 step._diagnostics_start = time.time()
                 step._diagnostics_reported = False
-                result = step.run()
+                with capture_ctx:
+                    result = step.run()
                 step.report_performance()
             else:
-                result = step.run()
+                with capture_ctx:
+                    result = step.run()
+
+            if captured_images:
+                self._captured_figures.append(
+                    {"step": step.name, "images": captured_images}
+                )
 
             return result
 
@@ -329,8 +392,38 @@ class Pipeline(ConfigMirrorMixin):
             )
             raise SystemExit(1) from None
 
-        for step in self.steps:
-            self._context = self.execute_step(step, self._context)
+        # If the pipeline writes a report, capture each step's diagnostic plots
+        # in the background (regardless of that step's own diagnostics setting)
+        # so they can be embedded in the report. This exercises every step's
+        # diagnostic code, which is why it can slow the run down.
+        report_present = any(s["name"] == REPORT_STEP_NAME for s in self.steps)
+        if report_present:
+            self._capture_diagnostics = True
+            self._captured_figures = []
+            self._capture_dir = tempfile.mkdtemp(prefix="pelagos_report_diag_")
+            self.logger.warning(
+                "A report step is enabled: diagnostic plots will be generated in "
+                "the background for every step that produces one, so the pipeline "
+                "may run more slowly than usual."
+            )
+
+        # When capturing for the report, force the headless Agg backend once for
+        # the whole run (see force_headless_backend). Toggling the backend per
+        # step can hard-crash on Windows, so it stays on Agg start to finish.
+        backend_ctx = (
+            diagnostic_capture.force_headless_backend()
+            if report_present
+            else contextlib.nullcontext()
+        )
+        try:
+            with backend_ctx:
+                for step in self.steps:
+                    self._context = self.execute_step(step, self._context)
+        finally:
+            if report_present:
+                #   Figures have been embedded by the report writer by now.
+                shutil.rmtree(self._capture_dir, ignore_errors=True)
+                self._capture_diagnostics = False
 
     def generate_config(self):
         """

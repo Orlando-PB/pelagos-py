@@ -17,7 +17,7 @@
 # Pipeline Configuration
 pipeline:
   name: Example processing pipeline
-  description: An example pipeline
+  description: An example pipeline using Nelson Near Realtime data.
   out_directory: examples/data/OG1/
   log_file: example_processing.log
 
@@ -97,7 +97,7 @@ steps:
           also_flag:
             PRES: [CNDC, TEMP] # Apply the bad flags to CNDC & TEMP too
           plot: [PRES] # Plot the outcome for just pressure
-    diagnostics: true # Plot the CTD QC outcomes (set false to skip the blocking plots)
+    diagnostics: false # Plot the CTD QC outcomes (set false to skip the blocking plots)
 
 # Since we are using near-realtime data there are a lot of missing values. Also, since
 # the GPS and science measurement clocks do not sample at the same rate, there are many
@@ -139,7 +139,7 @@ steps:
           valid profile qc:
             profile_length: 50 # Profiles must be at least 100 points long
             depth_range: [-1000, 0] # and must contain data within 0 and 1000 m
-    diagnostics: true
+    diagnostics: false
 
 
 # ------------------ SALINITY ADJUSTMENT --------------------
@@ -181,7 +181,7 @@ steps:
       apply_to: CHLA           # Variable to correct
       dark_value: null         # null -> compute the dark offset from the data
       depth_threshold: -550    # Only use data below this depth to estimate the dark value
-    diagnostics: true          # Plot the computed dark value and corrected profiles
+    diagnostics: false          # Plot the computed dark value and corrected profiles
 
 # Second, a non-photochemical quenching (NPQ) correction. Near the surface,
 # daylight suppresses fluorescence, so chlorophyll reads artificially low. The
@@ -223,3 +223,6 @@ steps:
     parameters:
       export_format: "netcdf"
       output_path: "examples/data/OG1/Nelson_646_R_Processed.nc"
+
+# ----------------------- Report assembly ---------------------
+  - name: Write Data Report (Python)

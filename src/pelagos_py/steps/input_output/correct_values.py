@@ -209,11 +209,11 @@ class CorrectValues(BaseStep):
         ax.set_xlabel(xlabel, fontsize=8)
         ax.grid(True, alpha=0.3)
         ax.tick_params(axis="both", which="major", labelsize=8)
-        ax.legend(loc="center left", bbox_to_anchor=(1.01, 0.5), fontsize=8, framealpha=0.9, fancybox=True)
+        ax.legend(loc="upper right", fontsize=8, framealpha=0.9, fancybox=True)
 
         fig.suptitle(
             f"Value Correction: {var}\n(corrected = {self.slope} * value + {self.intercept})",
             fontsize=10, fontweight="bold",
         )
-        fig.tight_layout(rect=[0, 0, 0.82, 1])
+        fig.tight_layout()
         plt.show(block=True)

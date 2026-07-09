@@ -10,7 +10,7 @@ numcodecs
 gsw
 geopy
 scikit-learn
-matplotlib
+matplotlib==3.11.0
 seaborn
 requests
 graphviz
@@ -24,7 +24,9 @@ glidertools
 ipykernel
 pytest
 rstcloth
+fpdf2
 cartopy
 pyyaml
+compliance-checker
 cc-plugin-ncei
 cc-plugin-og
