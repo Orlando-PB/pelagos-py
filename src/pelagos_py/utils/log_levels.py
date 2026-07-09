@@ -17,6 +17,8 @@
 """Custom logging levels shared across the pipeline."""
 
 import logging
+import os
+import sys
 
 STOP = logging.ERROR + 5
 """Custom log level for a deliberate pipeline halt (e.g. invalid config).
@@ -24,3 +26,53 @@ STOP = logging.ERROR + 5
 Sits just above ERROR so it always surfaces, and is rendered as "STOP" in logs.
 """
 logging.addLevelName(STOP, "STOP")
+
+
+def _supports_color(stream):
+    """Whether ANSI colour is safe to emit on ``stream``.
+
+    Only colour a real interactive terminal: skip when output is redirected to
+    a file/pipe (``isatty()`` is False), when NO_COLOR is set (no-color.org),
+    or on a dumb terminal. FORCE_COLOR overrides all of these.
+    """
+    if os.environ.get("FORCE_COLOR"):
+        return True
+    if os.environ.get("NO_COLOR") is not None:
+        return False
+    if os.environ.get("TERM") == "dumb":
+        return False
+    return hasattr(stream, "isatty") and stream.isatty()
+
+
+class ColorFormatter(logging.Formatter):
+    """Formatter that colours records by level on the console (STOP/ERROR red,
+    WARNING yellow).
+
+    Colour is only emitted when the target stream is an interactive terminal
+    that supports it (see :func:`_supports_color`), so redirected output and
+    dumb terminals stay clean plain text. Intended for stream handlers only;
+    the file handler keeps a plain formatter so log files carry no escape codes.
+    """
+
+    _RESET = "\033[0m"
+    _RED = "\033[31m"
+    _YELLOW = "\033[33m"
+
+    def __init__(self, *args, stream=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._use_color = _supports_color(stream if stream is not None else sys.stderr)
+
+    def _color_for(self, levelno):
+        """Return the ANSI colour for a level, or None to leave it uncoloured."""
+        if levelno >= logging.ERROR:
+            return self._RED
+        if levelno >= logging.WARNING:
+            return self._YELLOW
+        return None
+
+    def format(self, record):
+        message = super().format(record)
+        color = self._color_for(record.levelno) if self._use_color else None
+        if color:
+            return f"{color}{message}{self._RESET}"
+        return message

@@ -31,7 +31,7 @@ import tempfile
 
 from pelagos_py.utils.config_mirror import ConfigMirrorMixin
 from pelagos_py.utils.valid_config_check import check_pipeline_variables
-from pelagos_py.utils.log_levels import STOP
+from pelagos_py.utils.log_levels import STOP, ColorFormatter
 from pelagos_py.utils import diagnostic_capture
 
 REPORT_STEP_NAME = "Write Data Report (Python)"
@@ -86,10 +86,17 @@ def _setup_logging(out_dir=None, log_file=None, level=logging.INFO):
     )
 
     # Console handler. Always added so logs reach the console regardless of
-    # whether a log file is configured.
+    # whether a log file is configured. Uses a color formatter so STOP/ERROR
+    # lines show up red in the terminal (file handler stays plain, below).
     ch = logging.StreamHandler()
     ch.setLevel(level)
-    ch.setFormatter(formatter)
+    ch.setFormatter(
+        ColorFormatter(
+            "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+            "%Y-%m-%d %H:%M:%S",
+            stream=ch.stream,
+        )
+    )
     logger.addHandler(ch)
 
     # Treat unset / explicit "none"-like values as "no log file". This catches
