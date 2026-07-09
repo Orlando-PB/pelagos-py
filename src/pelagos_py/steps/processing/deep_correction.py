@@ -51,7 +51,10 @@ class deep_correction(BaseStep, QCHandlingMixin):
     The dark value is estimated as follows:
 
     1. Find profiles whose ``depth_var`` reaches past ``depth_threshold``
-       (deeper = larger, e.g. ``PRES > 950``) and take the first ``n_profiles``.
+       (deeper = larger, e.g. ``PRES > 950``) that also carry enough data:
+       at least ``min_profile_points`` finite points overall and
+       ``min_valid_points`` below the threshold. Take the first ``n_profiles``
+       that qualify.
     2. Smooth each profile with a ``smoothing_window``-point rolling median.
     3. Keep the deep points (below the threshold) that are finite and below
        ``max_valid_value`` (guards against non-dark readings).
@@ -130,10 +133,15 @@ class deep_correction(BaseStep, QCHandlingMixin):
             "default": 5,
             "description": "Deep values at or above this are ignored (guards against non-dark readings).",
         },
+        "min_profile_points": {
+            "type": int,
+            "default": 20,
+            "description": "A profile must have at least this many finite points overall to be selected.",
+        },
         "min_valid_points": {
             "type": int,
             "default": 3,
-            "description": "A profile must have at least this many valid deep points to contribute.",
+            "description": "A profile must have at least this many valid deep points to be selected and contribute.",
         },
     }
 
@@ -214,19 +222,34 @@ class deep_correction(BaseStep, QCHandlingMixin):
         df = self.data[["PROFILE_NUMBER", depth, var]].to_pandas()
         df = df.dropna(subset=["PROFILE_NUMBER", depth])
 
-        # Profiles reaching past the threshold, kept in order of occurrence.
+        # Profiles reaching past the threshold, in order of occurrence. Reaching
+        # deep is necessary but not sufficient — a profile can dip past the
+        # threshold yet carry no (or too little) data there, so we qualify each
+        # candidate on point coverage below before it spends an n_profiles slot.
         deep_reach = df.groupby("PROFILE_NUMBER")[depth].max()
-        deep_profiles = deep_reach[deep_reach > self.depth_threshold].index.to_numpy()
-        if len(deep_profiles) == 0:
+        candidates = deep_reach[deep_reach > self.depth_threshold].index.to_numpy()
+        if len(candidates) == 0:
             raise ValueError(
                 f"[{self.step_name}] No profiles reach past the depth threshold. "
                 "Try adjusting 'depth_threshold' or 'depth_var'."
             )
-        selected = deep_profiles[: self.n_profiles]
 
         minima = []
-        for profile_number in selected:
+        skipped = []
+        for profile_number in candidates:
+            if len(self._profile_diagnostics) >= self.n_profiles:
+                break
             profile = df[df["PROFILE_NUMBER"] == profile_number].sort_values(depth)
+
+            # Require enough points overall and enough below the threshold, so a
+            # sparse/empty deep profile is skipped rather than plotted and left
+            # unable to contribute.
+            n_points = int(profile[var].notna().sum())
+            below = profile[profile[depth] > self.depth_threshold]
+            n_deep_points = int(below[var].notna().sum())
+            if n_points < self.min_profile_points or n_deep_points < self.min_valid_points:
+                skipped.append(int(profile_number))
+                continue
 
             # Smooth along the full profile, then sample the deep region.
             smoothed = (
@@ -254,6 +277,14 @@ class deep_correction(BaseStep, QCHandlingMixin):
                 record["min_value"] = float(deep_vals.loc[idxmin])
                 record["min_depth"] = float(profile.loc[idxmin, depth])
                 minima.append(record["min_value"])
+
+        if skipped:
+            self.log(
+                f"Skipped {len(skipped)} deep profile(s) with too few points "
+                f"(need >= {self.min_profile_points} total, "
+                f">= {self.min_valid_points} below {self.depth_threshold} {depth}): "
+                f"{skipped}"
+            )
 
         if len(minima) == 0:
             raise ValueError(
@@ -292,7 +323,9 @@ class deep_correction(BaseStep, QCHandlingMixin):
         raw (faint) and rolling-median-smoothed (bold) trace against depth, with
         the sampled per-profile minimum marked. The depth threshold and the
         resulting dark value are drawn as reference lines, so a biofouled or
-        otherwise invalid profile is easy to spot.
+        otherwise invalid profile is easy to spot. A zoomed inset in the
+        bottom-right shows just the below-threshold points that drive the
+        estimate.
 
         **Right** — the deep values before (faint) and after subtracting the
         dark value; a valid estimate leaves the corrected values straddling
@@ -307,7 +340,7 @@ class deep_correction(BaseStep, QCHandlingMixin):
             return
 
         fig, (ax_prof, ax_corr) = plt.subplots(
-            1, 2, figsize=(12, 8), dpi=200, sharey=True
+            1, 2, figsize=(9, 5.5), dpi=150, sharey=True
         )
 
         cmap = mpl.cm.viridis
@@ -323,7 +356,7 @@ class deep_correction(BaseStep, QCHandlingMixin):
                 rec["smoothed"],
                 rec["depth"],
                 c=colour,
-                lw=1.6,
+                lw=1.4,
                 label=f"Prof. {int(profile_number)}",
             )
             if "min_value" in rec:
@@ -333,22 +366,26 @@ class deep_correction(BaseStep, QCHandlingMixin):
                     c=[colour],
                     edgecolors="k",
                     zorder=5,
-                    s=45,
+                    s=30,
                 )
 
         ax_prof.axhline(
-            self.depth_threshold, ls="--", c="grey", label="Depth threshold"
+            self.depth_threshold, ls="--", c="grey", lw=1, label="Depth threshold"
         )
+        ax_prof.axvline(0, ls=":", c="0.4", lw=1, label="Zero")
         ax_prof.axvline(
-            self.dark_value, ls="--", c="r", label=f"Dark value ({self.dark_value:.4g})"
+            self.dark_value, ls="--", c="r", lw=1, label=f"Dark value ({self.dark_value:.4g})"
         )
         ax_prof.invert_yaxis()  # deeper (larger depth_var) at the bottom
-        ax_prof.set(
-            xlabel=self.apply_to,
-            ylabel=self.depth_var,
-            title="Deep profiles used for dark estimate",
-        )
-        ax_prof.legend(fontsize=8, loc="upper right")
+        ax_prof.set_xlabel(self.apply_to, fontsize=8)
+        ax_prof.set_ylabel(self.depth_var, fontsize=8)
+        ax_prof.set_title("Deep profiles used for dark estimate", fontsize=9)
+        ax_prof.tick_params(labelsize=7)
+        ax_prof.legend(fontsize=6, loc="upper left", framealpha=0.9)
+
+        # Zoomed inset (bottom-right) of just the below-threshold points, where
+        # the dark value is actually estimated.
+        self._add_deep_inset(ax_prof, colours)
 
         # --- Right: deep values before/after correction (should straddle zero).
         for colour, rec in zip(colours, self._profile_diagnostics.values()):
@@ -367,14 +404,70 @@ class deep_correction(BaseStep, QCHandlingMixin):
                 ms=3,
             )
 
-        ax_corr.axvline(self.dark_value, ls="--", c="r", label="Dark value (raw)")
-        ax_corr.axvline(0, ls="--", c="k", label="Corrected baseline")
-        ax_corr.set(
-            xlabel=self.output_as,
-            title="Deep values before (faint) / after correction",
-        )
-        ax_corr.legend(fontsize=8, loc="upper right")
+        ax_corr.axvline(self.dark_value, ls="--", c="r", lw=1, label="Dark value (raw)")
+        ax_corr.axvline(0, ls="--", c="k", lw=1, label="Corrected baseline")
+        ax_corr.set_xlabel(self.output_as, fontsize=8)
+        ax_corr.set_title("Deep values before (faint) / after correction", fontsize=9)
+        ax_corr.tick_params(labelsize=7)
+        ax_corr.legend(fontsize=6, loc="upper right", framealpha=0.9)
 
-        fig.suptitle(f"Deep Correction — {self.apply_to}")
+        fig.suptitle(f"Deep Correction — {self.apply_to}", fontsize=11)
         fig.tight_layout()
         plt.show(block=True)
+
+    def _add_deep_inset(self, ax_prof, colours):
+        # Inset in the bottom-right of the profile panel, zoomed onto the deep
+        # (below-threshold) points that drive the estimate, with the same
+        # per-profile colours and min markers.
+        axins = ax_prof.inset_axes([0.56, 0.05, 0.4, 0.4])
+
+        deep_depths, deep_vals = [], []
+        for colour, rec in zip(colours, self._profile_diagnostics.values()):
+            mask = rec["deep_mask"]
+            depth = rec["depth"][mask]
+            vals = rec["smoothed"][mask]
+            axins.plot(vals, depth, c=colour, marker="o", ls="", ms=3)
+            deep_depths.append(depth)
+            deep_vals.append(vals)
+            if "min_value" in rec:
+                axins.scatter(
+                    rec["min_value"],
+                    rec["min_depth"],
+                    c=[colour],
+                    edgecolors="k",
+                    zorder=5,
+                    s=45,
+                )
+        axins.axvline(self.dark_value, ls="--", c="r")
+
+        # Frame on the deep points (plus the dark value) with a 10% margin for
+        # context, deeper (larger depth_var) at the bottom. Explicit limits keep
+        # the zoom-indicator box aligned with what the inset actually shows.
+        depth_cat = np.concatenate(deep_depths) if deep_depths else np.array([])
+        vals_cat = np.concatenate(deep_vals) if deep_vals else np.array([])
+        if depth_cat.size and np.isfinite(vals_cat).any():
+            xlo = min(np.nanmin(vals_cat), self.dark_value)
+            xhi = max(np.nanmax(vals_cat), self.dark_value)
+            dlo, dhi = np.nanmin(depth_cat), np.nanmax(depth_cat)
+            xlo, xhi = self._pad_range(xlo, xhi)
+            dlo, dhi = self._pad_range(dlo, dhi)
+            axins.set_xlim(xlo, xhi)
+            axins.set_ylim(dhi, dlo)  # inverted: deeper at the bottom
+
+        axins.tick_params(labelsize=6)
+        axins.set_title("Below threshold (zoom)", fontsize=7)
+        indicator = ax_prof.indicate_inset_zoom(axins, edgecolor="grey", alpha=0.4)
+        # The auto-picked connectors cross awkwardly (tiny source box, tall
+        # inset). Show only the two linking the inset's left edge to the box so
+        # they read as a clean zoom bracket.
+        for conn in indicator.connectors:
+            conn.set_visible(False)
+        indicator.connectors[0].set_visible(True)  # lower-left
+        indicator.connectors[1].set_visible(True)  # upper-left
+
+    @staticmethod
+    def _pad_range(lo, hi, frac=0.1):
+        # Widen a [lo, hi] range by a fraction of its span on each side.
+        span = hi - lo
+        pad = (span if span > 0 else abs(hi) or 1.0) * frac
+        return lo - pad, hi + pad

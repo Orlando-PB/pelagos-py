@@ -158,6 +158,23 @@ def test_raises_when_apply_to_missing():
         step.run()
 
 
+def test_sparse_deep_profile_is_skipped_not_selected():
+    """A profile that reaches deep but has no data there is skipped, not plotted."""
+    ctx = make_context(dark=0.7, n_profiles=6)
+    ds = ctx["data"]
+    # Blank the deep values of profile 0 (still reaches past the threshold, but
+    # carries no data there) so it must be skipped in favour of a later profile.
+    deep_of_zero = (ds["PROFILE_NUMBER"] == 0) & (ds["PRES"] > 950)
+    ds["CHLA"] = ds["CHLA"].where(~deep_of_zero)
+
+    step = make_step({"apply_to": "CHLA"}, ctx)
+    step.run()
+
+    assert 0 not in step._profile_diagnostics
+    assert len(step._profile_diagnostics) == 5
+    assert step.dark_value == pytest.approx(0.7, abs=0.1)
+
+
 def test_raises_when_too_few_valid_deep_points():
     """A profile lacking enough valid deep points cannot contribute a minimum."""
     ctx = make_context(dark=0.7)

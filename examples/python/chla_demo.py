@@ -1,22 +1,21 @@
+# TEMP: CHLA-focused cut of internal_config_demo.py — only the steps needed to
+# reach the two CHLA steps (Deep Correction + Chla Quenching Correction), with
+# their diagnostics turned on. The Chla Quenching MLD keys off DENSITY, so the
+# CTD -> salinity -> density chain (and Find Profiles for PROFILE_NUMBER) is
+# kept; the BBP, format-check and QC-only steps are dropped.
 import yaml
 from pelagos_py.pipeline import Pipeline
 
 BASE_CONFIG_YAML = """
 pipeline:
-  name: Example CTD Processing Pipeline
-  description: A pipeline for processing CTD data
+  name: CHLA Demo Pipeline
+  description: Minimal pipeline exercising the CHLA steps with diagnostics on
   log_file: None
 
 steps:
   - name: Load OG1
     parameters:
       file_path: examples/data/OG1/Nelson_646_R.nc
-    diagnostics: false
-
-  - name: Format Checker
-    parameters:
-      standards: ["og"]
-      proceed_on_fail: true
     diagnostics: false
 
   - name: Correct Values
@@ -26,42 +25,6 @@ steps:
       intercept: 0.0
       expected_range: [20, 45]
       corrected_units: mS/cm
-    diagnostics: false
-
-  - name: Apply QC
-    parameters:
-      qc_settings:
-        impossible date qc: {}
-        impossible location qc: {}
-        position on land qc: {}
-    diagnostics: false
-
-  - name: Apply QC
-    parameters:
-      qc_settings:
-
-        range qc:
-          variable_ranges:
-            PRES:
-              3: [-2.4, -5]
-              4: [-5, -.inf]
-            TEMP:
-              3: [0, 30]
-              4: [-2.5, 40]
-            CNDC:
-              3: [5, 42]
-              4: [2, 45]
-          also_flag:
-            PRES: [CNDC, TEMP]
-            CNDC: [PRES, TEMP]
-            TEMP: [PRES, CNDC]
-
-        stuck value qc:
-          variables:
-            PRES: 2
-          also_flag:
-            PRES: [CNDC, TEMP]
-          plot: [PRES]
     diagnostics: false
 
   - name: Interpolate Data
@@ -120,19 +83,7 @@ steps:
         reference_depth: -10
         threshold: 0.05
       plot_profiles: [101, 200, 201, 300, 301, 400]
-    diagnostics: false
-
-  - name: BBP from Beta
-    parameters:
-      theta: 124
-      xfactor: 1.076
-    diagnostics: false
-
-  - name: Isolate BBP Spikes
-    parameters:
-      window_size: 50
-      method: median
-    diagnostics: false
+    diagnostics: true
 """
 
 
