@@ -35,6 +35,10 @@ import matplotlib as mpl
 #: ``depth_threshold`` below this warns the user (see ``compute_dark_value``).
 MIN_DEEP_THRESHOLD = 300
 
+#: Cap on points scattered in the full-record diagnostic panel; a larger record
+#: is randomly downsampled to this many so the plot stays quick and legible.
+MAX_DIAGNOSTIC_POINTS = 10_000
+
 
 @register_step
 class deep_correction(BaseStep, QCHandlingMixin):
@@ -327,9 +331,11 @@ class deep_correction(BaseStep, QCHandlingMixin):
         bottom-right shows just the below-threshold points that drive the
         estimate.
 
-        **Right** — the deep values before (faint) and after subtracting the
-        dark value; a valid estimate leaves the corrected values straddling
-        zero.
+        **Right** — the whole ``apply_to`` record against depth: the raw values
+        in grey and the corrected values coloured by their corrected value. The
+        record is randomly downsampled to ``MAX_DIAGNOSTIC_POINTS`` if larger,
+        so the shift produced by the dark-value subtraction is visible across
+        the full profile envelope rather than just the deep points used.
         """
         mpl.use("tkagg")
 
@@ -387,33 +393,46 @@ class deep_correction(BaseStep, QCHandlingMixin):
         # the dark value is actually estimated.
         self._add_deep_inset(ax_prof, colours)
 
-        # --- Right: deep values before/after correction (should straddle zero).
-        for colour, rec in zip(colours, self._profile_diagnostics.values()):
-            mask = rec["deep_mask"]
-            deep_depth = rec["depth"][mask]
-            deep_vals = rec["smoothed"][mask]
-            ax_corr.plot(
-                deep_vals, deep_depth, c=colour, alpha=0.3, marker="o", ls="", ms=3
-            )
-            ax_corr.plot(
-                deep_vals - self.dark_value,
-                deep_depth,
-                c=colour,
-                marker="o",
-                ls="",
-                ms=3,
-            )
-
-        ax_corr.axvline(self.dark_value, ls="--", c="r", lw=1, label="Dark value (raw)")
-        ax_corr.axvline(0, ls="--", c="k", lw=1, label="Corrected baseline")
-        ax_corr.set_xlabel(self.output_as, fontsize=8)
-        ax_corr.set_title("Deep values before (faint) / after correction", fontsize=9)
-        ax_corr.tick_params(labelsize=7)
-        ax_corr.legend(fontsize=6, loc="upper right", framealpha=0.9)
+        # --- Right: the whole record, raw (grey) vs corrected (coloured).
+        self._plot_full_record(fig, ax_corr)
 
         fig.suptitle(f"Deep Correction — {self.apply_to}", fontsize=11)
         fig.tight_layout()
         plt.show(block=True)
+
+    def _plot_full_record(self, fig, ax_corr):
+        # The whole apply_to record against depth: raw in grey, corrected
+        # coloured by corrected value. Downsampled so a large record stays
+        # legible and quick to draw.
+        depth = np.asarray(self.data[self.depth_var].values).ravel()
+        raw = np.asarray(self.data[self.apply_to].values).ravel()
+        corr = np.asarray(self.data[self.output_as].values).ravel()
+
+        finite = np.isfinite(depth) & np.isfinite(raw) & np.isfinite(corr)
+        depth, raw, corr = depth[finite], raw[finite], corr[finite]
+
+        if depth.size > MAX_DIAGNOSTIC_POINTS:
+            rng = np.random.default_rng(0)
+            keep = rng.choice(depth.size, MAX_DIAGNOSTIC_POINTS, replace=False)
+            depth, raw, corr = depth[keep], raw[keep], corr[keep]
+            n_label = f"{MAX_DIAGNOSTIC_POINTS:,} of {int(finite.sum()):,} pts"
+        else:
+            n_label = f"{depth.size:,} pts"
+
+        ax_corr.scatter(raw, depth, c="0.7", s=4, alpha=0.4, label=f"Raw ({n_label})")
+        sc = ax_corr.scatter(
+            corr, depth, c=corr, cmap="viridis", s=4, alpha=0.6, label="Corrected"
+        )
+        ax_corr.axvline(0, ls="--", c="k", lw=1, label="Corrected baseline")
+
+        cbar = fig.colorbar(sc, ax=ax_corr, pad=0.02)
+        cbar.set_label(self.output_as, fontsize=7)
+        cbar.ax.tick_params(labelsize=6)
+
+        ax_corr.set_xlabel(self.output_as, fontsize=8)
+        ax_corr.set_title("Full record: raw (grey) vs corrected", fontsize=9)
+        ax_corr.tick_params(labelsize=7)
+        ax_corr.legend(fontsize=6, loc="upper right", framealpha=0.9)
 
     def _add_deep_inset(self, ax_prof, colours):
         # Inset in the bottom-right of the profile panel, zoomed onto the deep
@@ -456,14 +475,6 @@ class deep_correction(BaseStep, QCHandlingMixin):
 
         axins.tick_params(labelsize=6)
         axins.set_title("Below threshold (zoom)", fontsize=7)
-        indicator = ax_prof.indicate_inset_zoom(axins, edgecolor="grey", alpha=0.4)
-        # The auto-picked connectors cross awkwardly (tiny source box, tall
-        # inset). Show only the two linking the inset's left edge to the box so
-        # they read as a clean zoom bracket.
-        for conn in indicator.connectors:
-            conn.set_visible(False)
-        indicator.connectors[0].set_visible(True)  # lower-left
-        indicator.connectors[1].set_visible(True)  # upper-left
 
     @staticmethod
     def _pad_range(lo, hi, frac=0.1):

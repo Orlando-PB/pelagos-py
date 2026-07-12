@@ -117,6 +117,21 @@ def discover_steps():
 discover_steps()
 
 
+def resolve_step_name(step_name):
+    """
+    Resolve a step name to its canonical registered key, case-insensitively.
+
+    Returns the matching key from ``STEP_CLASSES`` (preserving its original
+    casing) or ``None`` if no case-insensitive match exists.
+    """
+    if step_name in STEP_CLASSES:
+        return step_name
+    if not isinstance(step_name, str):
+        return None
+    lowered = {name.lower(): name for name in STEP_CLASSES}
+    return lowered.get(step_name.lower())
+
+
 def create_step(step_config, context=None):
     """
     Factory to create a Step instance from a dictionary or YAML file.
@@ -148,12 +163,16 @@ def create_step(step_config, context=None):
     if not step_name:
         raise ValueError("Step config missing required 'name' field.")
 
-    step_class = STEP_CLASSES.get(step_name)
+    canonical_name = resolve_step_name(step_name)
+    step_class = STEP_CLASSES.get(canonical_name) if canonical_name else None
     if not step_class:
         raise ValueError(
             f"Step '{step_name}' not recognized or missing @register_step. "
             f"Available: {list(STEP_CLASSES.keys())}"
         )
+    # Use the registered (canonical) name so downstream naming is consistent
+    # regardless of the casing the user typed in their config.
+    step_name = canonical_name
 
     # --- Instantiate the step ---
     parameters = step_config.get("parameters", {}) or {}

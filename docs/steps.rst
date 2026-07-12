@@ -32,7 +32,7 @@ Variable Specific Steps
 
 * :doc:`CTD <api/pelagos_py/steps/processing/salinity/index>`: Specialised adjustments for Conductivity, Temperature, and Depth data.
 * :doc:`Oxygen <api/pelagos_py/steps/processing/oxygen/index>`: Corrections and calibrations for dissolved oxygen sensors.
-* :doc:`Chlorophyll <api/pelagos_py/steps/processing/chla/index>`: Processing steps for fluorescence and chlorophyll-a concentration.
+* :doc:`Chlorophyll <api/pelagos_py/steps/processing/chla_quenching/index>`: Processing steps for fluorescence and chlorophyll-a concentration.
 * :doc:`Backscatter <api/pelagos_py/steps/processing/bbp/index>`: Optical backscatter processing and scaling.
 
 Quality Control (QC)

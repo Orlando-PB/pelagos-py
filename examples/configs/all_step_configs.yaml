@@ -476,17 +476,28 @@ steps:
     #   Plot the deep profiles used and the deep values before/after correction.
     diagnostics: false
 
-# Chla Quenching Correction (src/pelagos_py/steps/processing/chla.py -> chla_quenching_correction):
+# CHLA Quenching (src/pelagos_py/steps/processing/chla_quenching.py -> chla_quenching_correction):
 # Offers a selection of Non-photochemical quenching correction techniques for removing Chla signal
 # supression caused by phytoplankton quenching.
-  - name: "Chla Quenching Correction"
+  - name: "CHLA Quenching"
     parameters:
       # [method]:
-      #   Method used for quenching correction. Currently only Argo is available which follows Xing et al. 2012
-      method: Argo
+      #   Method used for quenching correction. Implemented: 'xing2012' (MLD-based),
+      #   'biermann2015' (euphotic-depth-based, needs PAR), 'xing2018' and
+      #   'terrats2020' (backscatter-based, need BBP + PAR + MLD), 'hemsley2015'
+      #   (global night fluorescence-bbp regression, needs BBP + PAR) and
+      #   'thomalla2018' (per-night fl:bbp ratio profile, needs BBP + PAR). Other
+      #   options are placeholders.
+      method: xing2012
       # [apply_to]:
       #   Name of the variable to apply the correction to.
       apply_to: CHLA
+      # [bbp_var]:
+      #   Backscatter variable used by 'xing2018'/'terrats2020'/'hemsley2015'/'thomalla2018'.
+      bbp_var: BBP700
+      # [par_var]:
+      #   Downwelling PAR variable used by 'biermann2015'/'xing2018'/'terrats2020'/'hemsley2015'/'thomalla2018'.
+      par_var: DOWNWELLING_PAR
       # [mld_settings]
       #   Settings to tune the thresholding method for determining mixed later depth (MLD) which is a
       #   required intermediate product for this correction.

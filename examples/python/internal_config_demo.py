@@ -111,9 +111,9 @@ steps:
       depth_threshold: 950
     diagnostics: true
 
-  - name: Chla Quenching Correction
+  - name: CHLA Quenching
     parameters:
-      method: Argo
+      method: xing2012
       apply_to: CHLA
       mld_settings:
         threshold_on: DENSITY

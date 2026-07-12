@@ -37,7 +37,7 @@ from pelagos_py.utils import diagnostic_capture
 REPORT_STEP_NAME = "Write Data Report (Python)"
 """Name of the report step that triggers background diagnostic capture."""
 
-from pelagos_py.steps import create_step, STEP_CLASSES
+from pelagos_py.steps import create_step, STEP_CLASSES, resolve_step_name
 
 _PIPELINE_LOGGER_NAME = "pelagos_py.pipeline"
 """Global logger name for the pipeline. Used to create child loggers for steps."""
@@ -248,7 +248,10 @@ class Pipeline(ConfigMirrorMixin):
         ValueError
             If the step name is not recognized.
         """
-        if step_name not in STEP_CLASSES:
+        # Step names are matched case-insensitively; store the canonical
+        # (registered) name so downstream lookups and logging are consistent.
+        canonical_name = resolve_step_name(step_name)
+        if canonical_name is None:
             available_steps = list(STEP_CLASSES.keys())
             error_msg = (
                 f"Step '{step_name}' is not recognised or missing @register_step."
@@ -267,6 +270,7 @@ class Pipeline(ConfigMirrorMixin):
 
             self.logger.error(error_msg)
             raise ValueError(error_msg)
+        step_name = canonical_name
 
         step_config = {
             "name": step_name,

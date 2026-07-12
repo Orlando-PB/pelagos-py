@@ -185,12 +185,12 @@ steps:
 
 # Second, a non-photochemical quenching (NPQ) correction. Near the surface,
 # daylight suppresses fluorescence, so chlorophyll reads artificially low. The
-# Argo method (Xing et al. 2012) extrapolates the value at the base of the mixed
+# The xing2012 method (Xing et al. 2012) extrapolates the value at the base of the mixed
 # layer up to the surface. The mixed-layer depth is found by thresholding DENSITY
 # relative to a reference depth.
-  - name: Chla Quenching Correction
+  - name: CHLA Quenching
     parameters:
-      method: Argo             # Currently only 'Argo' (Xing et al. 2012) is supported
+      method: xing2012        # Only 'xing2012' (Xing et al. 2012) is currently implemented
       apply_to: CHLA           # Variable to correct (uses CHLA_ADJUSTED if it already exists)
       mld_settings:
         threshold_on: DENSITY  # Variable used to detect the mixed-layer depth
