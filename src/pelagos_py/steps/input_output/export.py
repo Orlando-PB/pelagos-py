@@ -32,7 +32,10 @@ class ExportStep(BaseStep):
     output_path : str
         Path and file name to output to. The file extension should be included.
     export_format : str
-        Either "netcdf", "csv", "hdf5" or "parquet"
+        Either "netcdf", "csv", "hdf5" or "parquet". Defaults to "netcdf".
+    compression : int
+        zlib compression level for netcdf/hdf5 output: 0 turns compression off,
+        1 (fastest) to 9 (smallest). Defaults to 4. Ignored for csv/parquet.
 
     Examples
     --------
@@ -45,6 +48,7 @@ class ExportStep(BaseStep):
             parameters:
                 output_path: "save/my/data/here.nc"
                 export_format: "netcdf"
+                compression: 4
     """
 
     step_name = "Data Export"
@@ -52,7 +56,7 @@ class ExportStep(BaseStep):
     parameter_schema = {
         "export_format": {
             "type": str,
-            "required": True,
+            "default": "netcdf",
             "options": ["csv", "netcdf", "hdf5", "parquet"],
             "description": "Export format compatible with xarray (csv/netcdf/hdf5/parquet).",
         },
@@ -60,6 +64,13 @@ class ExportStep(BaseStep):
             "type": str,
             "required": True,
             "description": "Path the dataset will be exported to.",
+        },
+        "compression": {
+            "type": int,
+            "default": 4,
+            "min": 0,
+            "max": 9,
+            "description": "zlib level for netcdf/hdf5 (0 = off, 1-9). Ignored for csv/parquet.",
         },
     }
 
@@ -78,6 +89,7 @@ class ExportStep(BaseStep):
 
         export_format = self.parameters["export_format"]
         output_path = self.parameters["output_path"]
+        compression = self.parameters["compression"]
 
         # Validate the export format  # TODO: have all of these file types been tested?
         if export_format not in ["csv", "netcdf", "hdf5", "parquet"]:
@@ -90,13 +102,21 @@ class ExportStep(BaseStep):
         if not isinstance(output_path, str):
             raise ValueError("Output path must be a string.")
 
+        # Build zlib encoding for netcdf/hdf5 (compression=0 disables it)
+        if compression:
+            encoding = {
+                var: {"zlib": True, "complevel": compression} for var in data.data_vars
+            }
+        else:
+            encoding = None
+
         # Export data based on the specified format
         if export_format == "csv":
             data.to_csv(output_path)
         elif export_format == "netcdf":
-            data.to_netcdf(output_path, engine="netcdf4")
+            data.to_netcdf(output_path, engine="netcdf4", encoding=encoding)
         elif export_format == "hdf5":
-            data.to_netcdf(output_path, engine="h5netcdf")
+            data.to_netcdf(output_path, engine="h5netcdf", encoding=encoding)
         elif export_format == "parquet":
             data.to_parquet(output_path)
         else:
