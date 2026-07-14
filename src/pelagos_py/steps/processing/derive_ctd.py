@@ -116,7 +116,8 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
         # Define GSW (Gibbs SeaWater) function calls for deriving oceanographic variables
         # Each tuple contains: (output_variable_name, gsw_function, [required_input_variables])
         gsw_function_calls = (
-            ("DEPTH", gsw.z_from_p, ["PRES", "LATITUDE"]),
+            # gsw.z_from_p returns TEOS-10 height (negative down); negate for OG1 positive-down depth
+            ("DEPTH", lambda p, lat: -gsw.z_from_p(p, lat), ["PRES", "LATITUDE"]),
             ("PRAC_SALINITY", gsw.SP_from_C, ["CNDC", "TEMP", "PRES"]),
             (
                 "ABS_SALINITY",
@@ -130,11 +131,17 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
         # Define metadata for each derived variable following CF conventions
         variable_metadata = {
             "DEPTH": {
-                "long_name": "Depth from surface (negative down as defined by TEOS-10)",
-                "units": "m",
-                "standard_name": "DEPTH",
-                "valid_min": -10925,  # Mariana Trench depth
-                "valid_max": 1,  # Above sea level
+                "long_name": (
+                    "Depth below surface of the water body by unknown instrument "
+                    "and correction to zero at sea level using unspecified algorithm."
+                ),
+                "units": "metres",
+                "standard_name": "depth",
+                "valid_min": 0.0,
+                "valid_max": 10000.0,
+                "positive": "down",
+                "ancillary_variables": "DEPTH_QC",
+                "depth_vocabulary": "https://vocab.nerc.ac.uk/collection/OG1/current/DEPTH/",
             },
             "PRAC_SALINITY": {
                 "long_name": "Practical salinity",
@@ -314,8 +321,8 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
             ax.grid(True, alpha=0.3)
             ax.tick_params(axis="both", which="major", labelsize=7)
 
-            # Invert y-axis for pressure so the ocean surface is at the top of the plot
-            if var_name == "PRES":
+            # Invert y-axis for pressure/depth so the ocean surface is at the top of the plot
+            if var_name in ("PRES", "DEPTH"):
                 ax.invert_yaxis()
 
         axes[-1].set_xlabel("Time", fontsize=8)

@@ -46,7 +46,7 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
     Two derived variables are written, both on the ``N_MEASUREMENTS`` dimension:
 
     - ``MLD`` — the mixed layer depth of the profile each measurement belongs to,
-      in the same negative-down convention as ``DEPTH`` (e.g. ``-25.0`` m). It is
+      in the same positive-down convention as ``DEPTH`` (e.g. ``25.0`` m). It is
       ``NaN`` for measurements not in a profile, or in a profile for which no MLD
       could be found.
     - ``MLD_BOOL`` — ``0`` where the measurement is above the MLD (shallower),
@@ -61,8 +61,8 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         otherwise falls back to ``TEMP``. An explicit choice whose variable is
         missing halts the pipeline.
     reference_depth : float, optional
-        Near-surface reference depth (negative down). The reference value is taken
-        at the shallowest measurement at or below this depth. Default ``-10``.
+        Near-surface reference depth (positive down). The reference value is taken
+        at the shallowest measurement at or below this depth. Default ``10``.
     density_threshold : float, optional
         Density departure (kg/m3) from the reference marking the MLD, used when the
         method resolves to density. Default ``0.03``.
@@ -78,7 +78,7 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
           - name: Mixed Layer Depth
             parameters:
               method: density
-              reference_depth: -10
+              reference_depth: 10
               density_threshold: 0.03
               temp_threshold: 0.2
             diagnostics: true
@@ -97,8 +97,8 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         },
         "reference_depth": {
             "type": [int, float],
-            "default": -10,
-            "description": "Near-surface reference depth (negative down).",
+            "default": 10,
+            "description": "Near-surface reference depth (positive down).",
         },
         "density_threshold": {
             "type": [int, float],
@@ -142,13 +142,13 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
             profile_depth = depth[indices]
             mld[indices] = profile_mld
             # Above the MLD (shallower) -> 0, at/below (deeper) -> 1, NaN depth -> NaN.
-            flags = np.where(profile_depth <= profile_mld, 1.0, 0.0)
+            flags = np.where(profile_depth >= profile_mld, 1.0, 0.0)
             flags[np.isnan(profile_depth)] = np.nan
             mld_bool[indices] = flags
 
         self.data["MLD"] = (("N_MEASUREMENTS",), mld)
         self.data["MLD"].attrs = {
-            "long_name": "Mixed layer depth of the profile (negative down, matching DEPTH). NaN where undefined.",
+            "long_name": "Mixed layer depth of the profile (positive down, matching DEPTH). NaN where undefined.",
             "units": "m",
             "standard_name": "MLD",
         }
@@ -216,30 +216,30 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         return variable, threshold
 
     def _profile_mld(self, depth, values):
-        """Return the MLD (negative-down metres) for one profile, or ``NaN``.
+        """Return the MLD (positive-down metres) for one profile, or ``NaN``.
 
         Starting from the shallowest measurement at or below ``reference_depth``,
         the MLD is the shallowest depth whose value departs from that reference by
         at least ``threshold``.
         """
         # Restrict to valid points at or below the reference depth.
-        below_reference = depth <= self.reference_depth
+        below_reference = depth >= self.reference_depth
         valid = below_reference & ~np.isnan(depth) & ~np.isnan(values)
         depth = depth[valid]
         values = values[valid]
         if depth.size == 0:
             return np.nan
 
-        # Reference point: the shallowest remaining measurement (largest DEPTH).
+        # Reference point: the shallowest remaining measurement (smallest DEPTH).
         # If it is deeper than twice the reference depth there is no data near the
         # surface to anchor to, so no MLD can be found.
-        reference_index = np.argmax(depth)
-        if depth[reference_index] < 2 * self.reference_depth:
+        reference_index = np.argmin(depth)
+        if depth[reference_index] > 2 * self.reference_depth:
             return np.nan
         reference_value = values[reference_index]
 
         # Scan from the surface downward for the first threshold crossing.
-        order = np.argsort(-depth)
+        order = np.argsort(depth)
         depth = depth[order]
         values = values[order]
         exceeded = np.where(np.abs(values - reference_value) >= np.abs(self.threshold))[0]
@@ -291,6 +291,7 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
 
         ax.set_xlabel("TIME" if "TIME" in self.data else "Measurement")
         ax.set_ylabel("DEPTH")
+        ax.invert_yaxis()  # positive-down depth: surface at the top
         ax.set_title(f"Mixed Layer Depth ({self.threshold_variable})")
         if mld_label is None:
             ax.legend(loc="lower right")

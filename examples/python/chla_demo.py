@@ -2,7 +2,8 @@
 # reach the two CHLA steps (Deep Correction + CHLA Quenching), with
 # their diagnostics turned on. The Mixed Layer Depth step keys off DENSITY, so the
 # CTD -> salinity -> density chain (and Find Profiles for PROFILE_NUMBER) is
-# kept; the BBP, format-check and QC-only steps are dropped.
+# kept, along with the BBP chain (feeds the quenching step); the format-check
+# and QC-only steps are dropped.
 import yaml
 from pelagos_py.pipeline import Pipeline
 
@@ -66,6 +67,23 @@ steps:
       to_derive: [PRAC_SALINITY, ABS_SALINITY, CONS_TEMP, DENSITY]
     diagnostics: false
 
+  # ---------------------- BACKSCATTER ------------------------
+  # Convert raw backscatter angle (beta) into the particulate backscattering
+  # coefficient BBP, then split the smooth baseline from isolated particle
+  # spikes. The quenching step below uses the despiked BBP700_BASELINE so that
+  # noise-level backscatter can't blow up the fl:bbp ratio.
+  - name: BBP from Beta
+    parameters:
+      theta: 124               # Effective optical backscatter scattering angle (degrees)
+      xfactor: 1.076           # Chi factor scaling particulate scattering to total backscatter
+    diagnostics: false
+
+  - name: Isolate BBP Spikes
+    parameters:
+      window_size: 50          # Filter window size in samples
+      method: median           # Filter method used to determine the baseline
+    diagnostics: false
+
   # ======================= CHLA SECTION START =======================
   # Mixed layer depth (defaults: auto method → DENSITY) — consumed by the
   # CHLA Quenching step below.
@@ -103,9 +121,7 @@ steps:
 
   - name: CHLA Quenching
     parameters:
-      method: xing2012
-      apply_to: CHLA
-      plot_profiles: [101, 200, 201, 300, 301, 400]
+      method: sackmann2008
     diagnostics: true
 
   # Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep

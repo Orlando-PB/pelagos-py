@@ -259,7 +259,7 @@ steps:
           profile_length: 1000
           # [depth_range]:
           #   DEPTH range that a profile must have at least one point in, otherwise it is flagged 3
-          depth_range: [-.inf, 0]
+          depth_range: [0, .inf]
 
         # flag_full_profile (*/flag_full_profile.py):
         #   Flag: 4 (bad)

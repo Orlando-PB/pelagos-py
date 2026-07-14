@@ -17,7 +17,7 @@ estimate_euphotic_depth = chla_quenching.estimate_euphotic_depth
 
 
 def make_profile(chlf, depth, bbp=None, ipar=None, mld=None, profile_number=101.0):
-    """Single-profile dataset in the step's negative-down DEPTH convention."""
+    """Single-profile dataset in the step's positive-down DEPTH convention."""
     n = len(chlf)
     data = {
         "PROFILE_NUMBER": ("N_MEASUREMENTS", np.full(n, profile_number)),
@@ -76,20 +76,21 @@ def test_biermann_lifts_shallow_to_max_below_zeu():
     z_pos = np.array([2, 6, 10, 15, 20, 30, 45, 60, 80.0])
     chlf = np.array([0.4, 0.5, 0.7, 0.9, 1.0, 0.8, 0.4, 0.2, 0.1])
     ipar = 200 * np.exp(-0.12 * z_pos)  # Zeu ~ 38 m
-    prof = make_profile(chlf, -z_pos, ipar=ipar)
+    prof = make_profile(chlf, z_pos, ipar=ipar)
 
     out = make_step().apply_biermann2015_quenching_correction(prof)
 
-    # Reference is the max fluorescence below Zeu (0.4 at 45 m); everything
-    # shallower than that quenching depth is set to it, deeper is untouched.
-    assert out[-2:].tolist() == [0.2, 0.1]
-    assert np.all(out[:-2] == pytest.approx(0.4))
+    # Reference is the max fluorescence within the euphotic zone (1.0 at 20 m);
+    # everything shallower than that quenching depth is set to it, deeper is
+    # untouched.
+    assert np.all(out[:5] == pytest.approx(1.0))
+    assert out[5:].tolist() == chlf[5:].tolist()
 
 
 def test_biermann_no_par_signal_returns_unchanged():
     z_pos = np.array([2, 6, 10, 15, 20, 30.0])
     chlf = np.array([0.4, 0.5, 0.7, 0.9, 1.0, 0.8])
-    prof = make_profile(chlf, -z_pos, ipar=np.full(z_pos.size, np.nan))
+    prof = make_profile(chlf, z_pos, ipar=np.full(z_pos.size, np.nan))
     out = make_step().apply_biermann2015_quenching_correction(prof)
     assert np.array_equal(out, chlf)
 
@@ -107,7 +108,7 @@ def _bbp_profile():
 def test_xing2018_resets_npq_layer_to_bbp_times_rmax():
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)  # iPAR=15 ~ 21.6 m, above MLD=25 -> deep
-    prof = make_profile(chlf, -z_pos, bbp=bbp, ipar=ipar, mld=-25.0)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, mld=25.0)
 
     out = make_step().apply_xing2018_quenching_correction(prof)
 
@@ -120,7 +121,7 @@ def test_xing2018_resets_npq_layer_to_bbp_times_rmax():
 def test_terrats_shallow_mixing_runs_and_never_reduces():
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 800 * np.exp(-0.05 * z_pos)  # iPAR=15 deep (~80 m) with shallow MLD
-    prof = make_profile(chlf, -z_pos, bbp=bbp, ipar=ipar, mld=-10.0)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, mld=10.0)
 
     out = make_step().apply_terrats2020_quenching_correction(prof)
 
@@ -132,7 +133,7 @@ def test_terrats_shallow_mixing_runs_and_never_reduces():
 def test_backscatter_methods_are_noop_at_night():
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)
-    prof = make_profile(chlf, -z_pos, bbp=bbp, ipar=ipar, mld=-25.0)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, mld=25.0)
     out = make_step(sun_angle=-5.0).apply_terrats2020_quenching_correction(prof)
     assert np.array_equal(out, chlf, equal_nan=True)
 
@@ -143,7 +144,7 @@ def test_backscatter_methods_are_noop_at_night():
 def test_hemsley_replaces_euphotic_zone_with_bbp_estimate():
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)  # Kd=0.12 -> Zeu ~ 38.4 m
-    prof = make_profile(chlf, -z_pos, bbp=bbp, ipar=ipar)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar)
 
     step = make_step()
     step._hemsley_regression = {"slope": 100.0, "intercept": 0.1}
@@ -158,7 +159,7 @@ def test_hemsley_replaces_euphotic_zone_with_bbp_estimate():
 def test_hemsley_no_regression_returns_unchanged():
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)
-    prof = make_profile(chlf, -z_pos, bbp=bbp, ipar=ipar)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar)
     step = make_step()
     step._hemsley_regression = None
     assert np.array_equal(step.apply_hemsley2015_quenching_correction(prof), chlf)
@@ -187,7 +188,7 @@ def test_quenching_depth_picks_steepest_gradient_point():
 def test_thomalla_corrects_above_quenching_depth_and_only_raises():
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)  # Zeu ~ 38 m
-    prof = make_profile(chlf, -z_pos, bbp=bbp, ipar=ipar)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar)
 
     step = make_step()
     # Night reference: constant fl:bbp ratio so corrected = 500*bbp (=1.0 at
@@ -206,8 +207,113 @@ def test_thomalla_corrects_above_quenching_depth_and_only_raises():
 def test_thomalla_unmapped_profile_returns_unchanged():
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)
-    prof = make_profile(chlf, -z_pos, bbp=bbp, ipar=ipar)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar)
     step = make_step()
     step._night_refs = []
     step._thomalla_day_night = {}  # this profile has no paired night
     assert np.array_equal(step.apply_thomalla2018_quenching_correction(prof), chlf)
+
+
+# --- Sackmann 2008 / Swart 2015 -------------------------------------------
+
+
+def test_sackmann_resets_layer_to_bbp_times_max_ratio_in_mld():
+    z_pos, chlf, bbp = _bbp_profile()
+    # Max fl:bbp within the MLD (25 m) is at 20 m (0.4/2e-3 = 500); the layer
+    # from the surface to there is reset to bbp*500 (=1.0), deeper is untouched.
+    prof = make_profile(chlf, z_pos, bbp=bbp, mld=25.0)
+
+    out = make_step().apply_sackmann2008_quenching_correction(prof)
+
+    assert np.all(out[:5] == pytest.approx(1.0))
+    assert out[5:].tolist() == chlf[5:].tolist()
+
+
+def test_swart_uses_euphotic_zone_window():
+    z_pos, chlf, bbp = _bbp_profile()
+    ipar = 200 * np.exp(-0.12 * z_pos)  # Kd=0.12 -> Zeu ~ 38 m
+    # Zeu (~38 m) reaches the 30 m point, whose fl:bbp (0.8/1.5e-3 = 533) is the
+    # window max; the surface-to-30 m layer is reset to bbp*533, deeper untouched.
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar)
+
+    out = make_step().apply_swart2015_quenching_correction(prof)
+
+    assert np.all(out[:6] == pytest.approx(bbp[:6] * (0.8 / 1.5e-3)))
+    assert out[6:].tolist() == chlf[6:].tolist()
+
+
+def test_sackmann_never_reduces_fluorescence():
+    z_pos, chlf, bbp = _bbp_profile()
+    prof = make_profile(chlf, z_pos, bbp=bbp, mld=25.0)
+    out = make_step().apply_sackmann2008_quenching_correction(prof)
+    assert np.all(out >= chlf - 1e-12)
+
+
+def test_max_ratio_methods_are_noop_at_night():
+    z_pos, chlf, bbp = _bbp_profile()
+    prof = make_profile(chlf, z_pos, bbp=bbp, mld=25.0)
+    out = make_step(sun_angle=-5.0).apply_sackmann2008_quenching_correction(prof)
+    assert np.array_equal(out, chlf, equal_nan=True)
+
+
+def test_swart_no_par_signal_returns_unchanged():
+    z_pos, chlf, bbp = _bbp_profile()
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=np.full(z_pos.size, np.nan))
+    out = make_step().apply_swart2015_quenching_correction(prof)
+    assert np.array_equal(out, chlf)
+
+
+# --- interpolate_par (fill casts lacking PAR) -------------------------------
+
+
+def _fill_step(max_gap_hours=12.0, day=(1, 2, 3)):
+    """Bare step for :meth:`_fill_par_across_casts` with three hourly casts."""
+    step = Quenching.__new__(Quenching)
+    step.interpolate_par_max_gap_hours = max_gap_hours
+    step.log = lambda _m: None
+    step._sun_cache = {pn: (10.0 if pn in day else -10.0) for pn in (1, 2, 3)}
+    step._sun_elevation_for = lambda pn: step._sun_cache[pn]
+    step.sun_args = xr.Dataset(
+        {"TIME": ("P", np.array(["2020-01-01T00:00", "2020-01-01T01:00",
+                                 "2020-01-01T02:00"], dtype="datetime64[ns]"))},
+        coords={"P": [1, 2, 3]},
+    ).to_pandas()
+    return step
+
+
+# cast 1 & 3 carry PAR (donors); cast 2 (middle, 1 h from each) has none.
+_DEPTH = np.array([0, 10, 20, 30.0] * 3)
+_PNUM = np.array([1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3.0])
+_PAR = np.array([100, 50, 25, 12, np.nan, np.nan, np.nan, np.nan, 200, 100, 50, 25.0])
+
+
+def test_fill_par_blends_two_neighbours_by_time():
+    out = _fill_step()._fill_par_across_casts(_PAR, _DEPTH, _PNUM)
+    # Midway in time -> mean of the two donors at each depth; donors untouched.
+    assert out[_PNUM == 2].tolist() == pytest.approx([150.0, 75.0, 37.5, 18.5])
+    assert out[_PNUM == 1].tolist() == pytest.approx([100, 50, 25, 12])
+
+
+def test_fill_par_one_sided_copies_single_donor():
+    par = _PAR.copy()
+    par[_PNUM == 3] = np.nan  # only cast 1 remains a donor
+    out = _fill_step()._fill_par_across_casts(par, _DEPTH, _PNUM)
+    assert out[_PNUM == 2].tolist() == pytest.approx([100, 50, 25, 12])
+
+
+def test_fill_par_skips_when_gap_too_large():
+    out = _fill_step(max_gap_hours=0.5)._fill_par_across_casts(_PAR, _DEPTH, _PNUM)
+    assert np.all(np.isnan(out[_PNUM == 2]))  # nearest donor is 1 h away
+
+
+def test_fill_par_does_not_extrapolate_below_donor_range():
+    depth = _DEPTH.copy()
+    depth[_PNUM == 2] = [0, 10, 40, 50]  # 40, 50 m are below the donors' 30 m max
+    out = _fill_step()._fill_par_across_casts(_PAR, depth, _PNUM)
+    filled = out[_PNUM == 2]
+    assert np.all(np.isfinite(filled[:2])) and np.all(np.isnan(filled[2:]))
+
+
+def test_fill_par_leaves_night_casts_alone():
+    out = _fill_step(day=(1, 3))._fill_par_across_casts(_PAR, _DEPTH, _PNUM)
+    assert np.all(np.isnan(out[_PNUM == 2]))  # cast 2 is night -> not filled

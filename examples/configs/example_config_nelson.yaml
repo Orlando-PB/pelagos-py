@@ -138,7 +138,7 @@ steps:
       qc_settings:
           valid profile qc:
             profile_length: 50 # Profiles must be at least 100 points long
-            depth_range: [-1000, 0] # and must contain data within 0 and 1000 m
+            depth_range: [0, 1000] # and must contain data within 0 and 1000 m
     diagnostics: false
 
 
@@ -180,7 +180,7 @@ steps:
     parameters:
       apply_to: CHLA           # Variable to correct
       dark_value: null         # null -> compute the dark offset from the data
-      depth_threshold: -550    # Only use data below this depth to estimate the dark value
+      depth_threshold: 550     # Only use data below this depth to estimate the dark value
     diagnostics: false          # Plot the computed dark value and corrected profiles
 
 # Second, a non-photochemical quenching (NPQ) correction. Near the surface,

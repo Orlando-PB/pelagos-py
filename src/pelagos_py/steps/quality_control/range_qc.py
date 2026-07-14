@@ -129,7 +129,7 @@ class range_qc(BaseQC):
                     4: [[2, 3, inside], [0.1, 10, outside]]
                 also_flag:
                   CNDC: [PRES, TEMP]    # CNDC's flags propagate onto PRES & TEMP (worst wins)
-                test_depth_range: [-100, 0]   # OPTIONAL: only check this DEPTH window
+                test_depth_range: [0, 100]    # OPTIONAL: only check this DEPTH window
           diagnostics: true             # plots every flagged variable, coloured by flag
     """
 
