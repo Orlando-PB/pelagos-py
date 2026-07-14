@@ -20,6 +20,7 @@
 from pelagos_py.steps.base_step import BaseStep, register_step
 from pelagos_py.utils.qc_handling import QCHandlingMixin
 import pelagos_py.utils.diagnostics as diag
+import pelagos_py.utils.palettes as palettes
 
 #### Custom imports ####
 import numpy as np
@@ -266,8 +267,9 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         fig, ax = plt.subplots(figsize=(14, 7), dpi=150)
 
         valid = ~np.isnan(depth) & ~np.isnan(threshold_values)
+        cmap = palettes.cmap_for_variable(self.threshold_variable, default="viridis")
         scatter = ax.scatter(
-            x[valid], depth[valid], c=threshold_values[valid], s=2, cmap="viridis"
+            x[valid], depth[valid], c=threshold_values[valid], s=2, cmap=cmap
         )
         colourbar = fig.colorbar(scatter, ax=ax)
         colourbar.set_label(self.threshold_variable)

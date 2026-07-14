@@ -16,17 +16,6 @@
 
 """Pipeline step for correcting chlorophyll-a fluorescence for non-photochemical quenching."""
 
-# Quenching correction methods. When implementing one, add the method key to
-# ``methods_requiring_sun`` if it needs the solar elevation angle.
-#   [x] xing2012      (Xing et al. 2012)
-#   [x] biermann2015  (Biermann et al. 2015)
-#   [x] hemsley2015   (Hemsley et al. 2015)
-#   [x] xing2018      (Xing et al. 2018)
-#   [x] terrats2020   (Terrats et al. 2020)
-#   [x] thomalla2018  (Thomalla et al. 2018)
-#   [x] swart2015     (Swart et al. 2015)
-#   [x] sackmann2008  (Sackmann et al. 2008)
-
 #### Mandatory imports ####
 from pelagos_py.steps.base_step import BaseStep, register_step
 from pelagos_py.utils.qc_handling import QCHandlingMixin
@@ -53,7 +42,7 @@ MIDDAY_MIDNIGHT_WINDOW_HOURS = 1.5  #: solar-time half-window (h) around solar n
 TIMESERIES_DEPTH_LIMIT = 300.0  #: max depth (m) shown in the timeseries; the window is dynamic but never deeper than this.
 TIMESERIES_DEPTH_MIN = 50.0  #: min depth (m) the dynamic timeseries window is allowed to shrink to.
 SECTION_MARKER_SIZE = 1.5  #: scatter marker size (points^2) for the section plots.
-SECTION_MAX_POINTS = 1_000_000  #: DEBUG: cap on points drawn in the bottom "by correction status" panel; large values are slow but show the full cloud.
+SECTION_MAX_POINTS = 100_000  #: cap on points drawn in the bottom "by correction status" panel; larger is slower but shows more of the cloud.
 
 #: Colour/label per point category in the bottom section debug panel, in draw
 #: order (later entries plot on top, so 'corrected' sits over 'uncorrected').
@@ -67,14 +56,8 @@ SECTION_CATEGORY_STYLE = [
 NIGHT_REF_BIN_METRES = 1.0  #: depth bin (m) for averaging nighttime profiles into a reference.
 HEMSLEY_REGRESSION_DEPTH = 60.0  #: top-of-water depth (m) over which the Hemsley regression is fit.
 
-#: A quenching correction should not lift CHLA far above the profile's own
-#: maximum observed fluorescence. The backscatter-ratio methods
-#: ('xing2018'/'terrats2020'/'thomalla2018'/'sackmann2008'/'swart2015') can,
-#: when a near-zero (noise-level)
-#: backscatter inflates the CHLA/bbp ratio. Warn once if a corrected value
-#: exceeds this multiple of the profile's max input - judged on the output, not
-#: the ratio, so a large-but-harmless ratio doesn't cry wolf. Usually means the
-#: backscatter needs cleaning first.
+#: Warn once if a backscatter-ratio correction lifts CHLA above this multiple of
+#: the profile's own max input (usually a near-zero bbp inflating the CHLA/bbp ratio).
 CORRECTION_WARN_FACTOR = 5.0
 
 #: Backscatter variables tried, in order, when the configured 'bbp_var' is
@@ -136,7 +119,7 @@ def check_chl_variables(self, allowed_requests):
         )
 
     if f"{user_request}_ADJUSTED" in self.data.data_vars:
-        self.log(
+        self.log_warn(
             f"User requested processing on {user_request} but {user_request}_ADJUSTED already exists. Using {user_request}_ADJUSTED..."
         )
         user_request = f"{user_request}_ADJUSTED"
@@ -351,7 +334,10 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         ):
             build_refs |= {"hemsley2015", "thomalla2018"}
         for ref_method in build_refs:
-            self._build_night_references(ref_method)
+            # With diagnostics on, references are built for the comparison
+            # panels even when they aren't the configured method, so keep their
+            # build logs quiet - only time/RAM should print in diagnostics mode.
+            self._build_night_references(ref_method, quiet=self.diagnostics)
 
         # Subset the data to just the variables the chosen method needs.
         subset_vars = ["PROFILE_NUMBER", "DEPTH", self.apply_to]
@@ -395,47 +381,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             # Stitch back into the full data
             profile_indices = np.where(self.data["PROFILE_NUMBER"] == profile_number)
             self.data[self.output_as][profile_indices] = corrected_chla
-
-        # TEMP DEBUG: report why the biermann correction skipped/altered profiles,
-        # and how Zeu (its window) compares to MLD (xing's window) on the same
-        # profiles. Remove this block once the biermann behaviour is understood.
-        dbg = getattr(self, "_biermann_dbg", None)
-        if dbg is not None:
-            def _stats(a):
-                a = np.asarray(a, dtype=float)
-                a = a[np.isfinite(a)]
-                if not a.size:
-                    return "none"
-                return (
-                    f"n={a.size} min={a.min():.1f} median={np.median(a):.1f} "
-                    f"max={a.max():.1f} m"
-                )
-
-            mld_per_profile = []
-            if "MLD" in self.data.data_vars:
-                pnum_all = self.data["PROFILE_NUMBER"].values
-                mld_all = np.asarray(self.data["MLD"].values, dtype=float)
-                for pn in self.sun_args.index:
-                    m = mld_all[pnum_all == pn]
-                    m = m[np.isfinite(m)]
-                    if m.size:
-                        mld_per_profile.append(float(m[0]))
-
-            self.log(
-                "TEMP biermann tally: "
-                f"total={dbg['total']} night={dbg['night']} "
-                f"bad_input={dbg['bad_input']} zeu_nan={dbg['zeu_nan']} "
-                f"empty_window={dbg['empty_window']} corrected={dbg['corrected']} "
-                f"no_change={dbg['no_change']}"
-            )
-            self.log(f"TEMP biermann Zeu (valid profiles): {_stats(dbg['zeu'])}")
-            self.log(f"TEMP biermann z_qd (reference depth): {_stats(dbg['z_qd'])}")
-            self.log(f"TEMP biermann MLD (same profiles):   {_stats(mld_per_profile)}")
-            self.log(
-                "TEMP biermann points changed total = "
-                f"{int(np.nansum(dbg['n_changed']))}"
-            )
-        # END TEMP DEBUG
 
         self.reconstruct_data()
         self.update_qc()
@@ -741,26 +686,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         sun_angle = self._sun_elevation(profile)
         zeu = estimate_euphotic_depth(par, depth)
 
-        # TEMP DEBUG: tally why each profile is/isn't corrected by biermann so
-        # the run summary (in run()) can show what drives the point count.
-        dbg = getattr(self, "_biermann_dbg", None)
-        if dbg is None:
-            dbg = self._biermann_dbg = {
-                "total": 0, "night": 0, "bad_input": 0, "zeu_nan": 0,
-                "empty_window": 0, "no_change": 0, "corrected": 0,
-                "zeu": [], "z_qd": [], "n_changed": [],
-            }
-        dbg["total"] += 1
-        if sun_angle <= 0:
-            dbg["night"] += 1
-        elif N == 0 or len(depth) != N or np.all(np.isnan(chlf)):
-            dbg["bad_input"] += 1
-        elif not np.isfinite(zeu) or zeu <= 0:
-            dbg["zeu_nan"] += 1
-        else:
-            dbg["zeu"].append(float(zeu))
-        # END TEMP DEBUG
-
         if (
             sun_angle <= 0
             or N == 0
@@ -775,7 +700,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         within_zeu = depth <= zeu
         chlf_within = np.where(within_zeu, chlf, np.nan)
         if np.all(np.isnan(chlf_within)):
-            dbg["empty_window"] += 1  # TEMP DEBUG
             return chlf
 
         idx_max = np.nanargmax(chlf_within)
@@ -785,14 +709,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         # Lift everything shallower than the quenching depth to the reference.
         chl_corr = np.copy(chlf)
         chl_corr[(depth <= z_qd) & (~np.isnan(chlf))] = f_max
-
-        # TEMP DEBUG: record the correction extent (depth of the reference max
-        # and how many points actually moved) for the run summary.
-        n_changed = int(np.sum(np.abs(chl_corr - chlf) > 1e-9))
-        dbg["z_qd"].append(float(z_qd))
-        dbg["n_changed"].append(n_changed)
-        dbg["corrected" if n_changed else "no_change"] += 1
-        # END TEMP DEBUG
 
         self._explain(
             profile,
@@ -850,7 +766,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         self._explain(profile, depth=depth, chlf=chlf, zeu=zeu, z_ref=zeu)
         return chl_corr
 
-    def _build_night_references(self, method_key):
+    def _build_night_references(self, method_key, quiet=False):
         """Build the nighttime references used by 'hemsley2015'/'thomalla2018'.
 
         Runs once in :meth:`run` before the per-profile loop. Profiles are
@@ -906,10 +822,11 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 "bbp": b[sel],
                 "fl": f[sel],
             }
-            self.log(
-                f"Hemsley 2015: night regression Chl = {fit.slope:.4g}*bbp "
-                f"+ {fit.intercept:.4g} (r2={fit.rvalue ** 2:.2f}, n={int(np.sum(sel))})."
-            )
+            if not quiet:
+                self.log(
+                    f"Hemsley 2015: night regression Chl = {fit.slope:.4g}*bbp "
+                    f"+ {fit.intercept:.4g} (r2={fit.rvalue ** 2:.2f}, n={int(np.sum(sel))})."
+                )
             return
 
         # thomalla2018: group consecutive nighttime profiles into nights.
@@ -947,10 +864,11 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
         self._night_refs = night_refs
         self._thomalla_day_night = day_night
-        self.log(
-            f"Thomalla 2018: built {len(night_refs)} nighttime fl:bbp reference "
-            f"profile(s) covering {len(day_night)} day profile(s)."
-        )
+        if not quiet:
+            self.log(
+                f"Thomalla 2018: built {len(night_refs)} nighttime fl:bbp reference "
+                f"profile(s) covering {len(day_night)} day profile(s)."
+            )
 
     @staticmethod
     def _bin_night(z, fl, bbp):
@@ -1623,10 +1541,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         window = MIDDAY_MIDNIGHT_WINDOW_HOURS
         midday = [pn for pn in pns if from_noon[pn] <= window]
         midnight = [pn for pn in pns if from_noon[pn] >= 12.0 - window]
-        self.log(
-            f"Method comparison: {len(midday)} midday and {len(midnight)} "
-            f"midnight profile(s) within +/-{window:g} h of solar noon/midnight."
-        )
         if not midday or not midnight:
             self.log(
                 "Too few midday/midnight profiles for the method comparison; "

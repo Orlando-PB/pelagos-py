@@ -30,6 +30,7 @@ import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import pelagos_py.utils.palettes as palettes
 
 #: Shallowest depth still treated as a plausible "deep", signal-free region; a
 #: ``depth_threshold`` below this warns the user (see ``compute_dark_value``).
@@ -420,8 +421,9 @@ class deep_correction(BaseStep, QCHandlingMixin):
             n_label = f"{depth.size:,} pts"
 
         ax_corr.scatter(raw, depth, c="0.7", s=4, alpha=0.4, label=f"Raw ({n_label})")
+        cmap = palettes.cmap_for_variable(self.output_as, default="viridis")
         sc = ax_corr.scatter(
-            corr, depth, c=corr, cmap="viridis", s=4, alpha=0.6, label="Corrected"
+            corr, depth, c=corr, cmap=cmap, s=4, alpha=0.6, label="Corrected"
         )
         ax_corr.axvline(0, ls="--", c="k", lw=1, label="Corrected baseline")
 

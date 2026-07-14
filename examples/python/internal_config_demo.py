@@ -103,25 +103,11 @@ steps:
       to_derive: [PRAC_SALINITY, ABS_SALINITY, CONS_TEMP, DENSITY]
     diagnostics: false
 
-  - name: Deep Correction
-    parameters:
-      apply_to: CHLA
-      dark_value: null
-      depth_var: PRES
-      depth_threshold: 950
-    diagnostics: true
-
-  - name: CHLA Quenching
-    parameters:
-      method: xing2012
-      apply_to: CHLA
-      mld_settings:
-        threshold_on: DENSITY
-        reference_depth: -10
-        threshold: 0.05
-      plot_profiles: [101, 200, 201, 300, 301, 400]
-    diagnostics: false
-
+  # ---------------------- BACKSCATTER ------------------------
+  # Convert raw backscatter angle (beta) into the particulate backscattering
+  # coefficient BBP, then split the smooth baseline from isolated particle
+  # spikes. The quenching step below uses the despiked BBP700_BASELINE so that
+  # noise-level backscatter can't blow up the fl:bbp ratio.
   - name: BBP from Beta
     parameters:
       theta: 124
@@ -132,6 +118,60 @@ steps:
     parameters:
       window_size: 50
       method: median
+    diagnostics: false
+
+  # ======================= CHLA SECTION =======================
+  # Mixed layer depth (defaults: auto method -> DENSITY) - consumed by the
+  # CHLA Quenching step below.
+  - name: Mixed Layer Depth
+    diagnostics: false
+
+  # Range test on the raw CHLA before correction: probably-bad (3) outside
+  # 0-15, bad (4) outside -1-20 mg m-3.
+  - name: Apply QC
+    parameters:
+      qc_settings:
+        range qc:
+          variable_ranges:
+            CHLA:
+              3: [0, 15, outside]
+              4: [-1, 20, outside]
+    diagnostics: false
+
+  # Spike test on CHLA (per-profile MAD-style residual test).
+  - name: Apply QC
+    parameters:
+      qc_settings:
+        spike qc:
+          variables:
+            CHLA: 2
+          window_size: 50
+          plot: [CHLA]
+    diagnostics: false
+
+  - name: Deep Correction
+    parameters:
+      apply_to: CHLA
+      dark_value: null
+      depth_var: PRES
+      depth_threshold: 950
+    diagnostics: false
+
+  - name: CHLA Quenching
+    parameters:
+      method: thomalla2018
+    diagnostics: false
+
+  # Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep
+  # and quenching corrections pushed any values out of range.
+  - name: Apply QC
+    parameters:
+      qc_settings:
+        range qc:
+          variable_ranges:
+            CHLA_ADJUSTED:
+              3: [0, 15, outside]
+              4: [-1, 20, outside]
     diagnostics: false
 """
 

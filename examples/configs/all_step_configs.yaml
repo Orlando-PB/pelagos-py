@@ -485,26 +485,33 @@ steps:
       #   Method used for quenching correction. Implemented: 'xing2012' (MLD-based),
       #   'biermann2015' (euphotic-depth-based, needs PAR), 'xing2018' and
       #   'terrats2020' (backscatter-based, need BBP + PAR + MLD), 'hemsley2015'
-      #   (global night fluorescence-bbp regression, needs BBP + PAR) and
-      #   'thomalla2018' (per-night fl:bbp ratio profile, needs BBP + PAR). Other
-      #   options are placeholders.
+      #   (global night fluorescence-bbp regression, needs BBP + PAR), 'thomalla2018'
+      #   (per-night fl:bbp ratio profile, needs BBP + PAR), 'sackmann2008' (max
+      #   fl:bbp ratio within the MLD, needs BBP + MLD) and 'swart2015' (max fl:bbp
+      #   ratio within the euphotic zone, needs BBP + PAR).
       method: xing2012
       # [apply_to]:
       #   Name of the variable to apply the correction to.
       apply_to: CHLA
       # [bbp_var]:
-      #   Backscatter variable used by 'xing2018'/'terrats2020'/'hemsley2015'/'thomalla2018'.
-      bbp_var: BBP700
+      #   Backscatter variable used by the backscatter-based methods. Defaults to the
+      #   despiked 'BBP700_BASELINE'; falls back through BBP700/BBP532 if absent.
+      bbp_var: BBP700_BASELINE
       # [par_var]:
-      #   Downwelling PAR variable used by 'biermann2015'/'xing2018'/'terrats2020'/'hemsley2015'/'thomalla2018'.
+      #   Downwelling PAR variable used by the PAR-based methods.
       par_var: DOWNWELLING_PAR
-      # Note: the MLD-based methods ('xing2012'/'xing2018'/'terrats2020') read the
-      #   'MLD' variable produced by a preceding 'Mixed Layer Depth' step; configure
-      #   the MLD method and thresholds there, not here.
-      # [plot_profiles]:
-      #   List of profile numbers to be plotted
-      plot_profiles: [101, 200, 201, 300, 301, 400]
-    diagnostics: true
+      # [interpolate_par]:
+      #   For PAR-based methods, fill casts lacking usable PAR from the nearest
+      #   valid cast on each side so every cast can be corrected.
+      interpolate_par: true
+      # [interpolate_par_max_gap_hours]:
+      #   Only used when interpolate_par is true: a cast is filled only if a
+      #   valid-PAR cast exists within this many hours on at least one side.
+      interpolate_par_max_gap_hours: 12.0
+      # Note: the MLD-based methods ('xing2012'/'xing2018'/'terrats2020'/'sackmann2008')
+      #   read the 'MLD' variable produced by a preceding 'Mixed Layer Depth' step;
+      #   configure the MLD method and thresholds there, not here.
+    diagnostics: false
 
 
 # ------------------------------------------------------------------------------------------- Backscatter processing -------------------------------------------------------------------------------------------

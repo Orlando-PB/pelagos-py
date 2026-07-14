@@ -170,36 +170,10 @@ steps:
       ]
     diagnostics: false
 
-# ----------------- CHLOROPHYLL CORRECTIONS -----------------
-# Chlorophyll fluorescence needs two corrections. First, a deep (dark-offset)
-# correction removes the sensor's baseline drift. The dark value is the residual
-# fluorescence measured deep down where there should be no chlorophyll, so it is
-# subtracted from the whole profile. Here dark_value is null, so it is computed
-# from the data using only measurements below depth_threshold.
-  - name: Chla Deep Correction
-    parameters:
-      apply_to: CHLA           # Variable to correct
-      dark_value: null         # null -> compute the dark offset from the data
-      depth_threshold: 550     # Only use data below this depth to estimate the dark value
-    diagnostics: false          # Plot the computed dark value and corrected profiles
-
-# Second, a non-photochemical quenching (NPQ) correction. Near the surface,
-# daylight suppresses fluorescence, so chlorophyll reads artificially low. The
-# The xing2012 method (Xing et al. 2012) extrapolates the value at the base of the mixed
-# layer up to the surface. The mixed-layer depth is found by thresholding DENSITY
-# relative to a reference depth.
-  - name: CHLA Quenching
-    parameters:
-      method: xing2012        # Only 'xing2012' (Xing et al. 2012) is currently implemented
-      apply_to: CHLA           # Variable to correct (uses CHLA_ADJUSTED if it already exists)
-      mld_settings:
-        threshold_on: DENSITY  # Variable used to detect the mixed-layer depth
-        reference_depth: -10   # Reference depth for the MLD threshold
-        threshold: 0.05        # Density change (vs. reference depth) that marks the MLD base
-      plot_profiles: [101, 200, 201, 300, 301, 400] # Profile numbers to plot in diagnostics
-    diagnostics: false
-
 # ---------------------- BACKSCATTER ------------------------
+# Backscatter is processed before chlorophyll because the quenching correction
+# below relies on the despiked BBP baseline.
+
 # Convert the raw backscatter angle measurement (beta) into the particulate
 # backscattering coefficient BBP, using the scattering angle and chi factor.
   - name: BBP from Beta
@@ -210,11 +184,75 @@ steps:
 
 # Large isolated spikes in BBP correspond to individual particles/aggregates.
 # This step separates that spike signal from the smooth baseline with a moving
-# filter, so each can be analysed on its own.
+# filter, leaving BBP700_BASELINE for the quenching step to use.
   - name: Isolate BBP Spikes
     parameters:
       window_size: 50          # Filter window size in samples
       method: median           # Filter method used to determine the baseline
+    diagnostics: false
+
+# ----------------- CHLOROPHYLL CORRECTIONS -----------------
+# Mixed layer depth (from DENSITY) - consumed by the MLD-based quenching
+# methods. Computed here so the method can be swapped without reordering steps.
+  - name: Mixed Layer Depth
+    diagnostics: false
+
+# Range-test the raw CHLA before correcting it: probably-bad (3) outside
+# 0-15, bad (4) outside -1-20 mg m-3 (most-severe flag wins on overlap).
+  - name: Apply QC
+    parameters:
+      qc_settings:
+        range qc:
+          variable_ranges:
+            CHLA:
+              3: [0, 15, outside]
+              4: [-1, 20, outside]
+    diagnostics: false
+
+# Spike-test CHLA (per-profile MAD-style residual test).
+  - name: Apply QC
+    parameters:
+      qc_settings:
+        spike qc:
+          variables:
+            CHLA: 2
+          window_size: 50
+          plot: [CHLA]
+    diagnostics: false
+
+# Chlorophyll fluorescence needs two corrections. First, a deep (dark-offset)
+# correction removes the sensor's baseline drift. The dark value is the residual
+# fluorescence measured deep down where there should be no chlorophyll, so it is
+# subtracted from the whole profile. Here dark_value is null, so it is computed
+# from the data using only measurements below depth_threshold.
+  - name: Deep Correction
+    parameters:
+      apply_to: CHLA           # Variable to correct
+      dark_value: null         # null -> compute the dark offset from the data
+      depth_threshold: 550     # Only use data below this depth to estimate the dark value
+    diagnostics: false         # Plot the computed dark value and corrected profiles
+
+# Second, a non-photochemical quenching (NPQ) correction. Near the surface,
+# daylight suppresses fluorescence, so chlorophyll reads artificially low. The
+# thomalla2018 method builds a per-night fluorescence:backscatter ratio profile
+# and applies it to the following day's profiles, so it needs the BBP and PAR
+# variables produced/loaded above.
+  - name: CHLA Quenching
+    parameters:
+      method: thomalla2018     # Per-night fl:bbp ratio profile (needs BBP + PAR)
+      apply_to: CHLA           # Variable to correct (uses CHLA_ADJUSTED if it already exists)
+    diagnostics: false
+
+# Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep and
+# quenching corrections pushed any values out of range.
+  - name: Apply QC
+    parameters:
+      qc_settings:
+        range qc:
+          variable_ranges:
+            CHLA_ADJUSTED:
+              3: [0, 15, outside]
+              4: [-1, 20, outside]
     diagnostics: false
 
 # ---------------------- EXPORT DATA ------------------------

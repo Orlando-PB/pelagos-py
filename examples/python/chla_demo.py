@@ -121,7 +121,7 @@ steps:
 
   - name: CHLA Quenching
     parameters:
-      method: sackmann2008
+      method: thomalla2018
     diagnostics: true
 
   # Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep

@@ -53,6 +53,22 @@ SEQUENTIAL = {
     ],
 }
 
+#: Dataset variable names -> :data:`SEQUENTIAL` palette key, so a step can pick
+#: the right palette straight from the variable it is colouring.
+VARIABLE_PALETTES = {
+    "TEMP": "temperature",
+    "CONS_TEMP": "temperature",
+    "PSAL": "salinity",
+    "PRAC_SALINITY": "salinity",
+    "ABS_SALINITY": "salinity",
+    "DENSITY": "density",
+    "DOXY": "oxygen",
+    "CHLA": "chlorophyll",
+    "CHLA_ADJUSTED": "chlorophyll",
+    "BBP700": "backscatter",
+    "BBP700_ADJUSTED": "backscatter",
+}
+
 
 def get_cmap(name):
     """Build a matplotlib colormap from a named :data:`SEQUENTIAL` palette.
@@ -74,3 +90,23 @@ def get_cmap(name):
             f"No palette named '{name}'. Available: {', '.join(SEQUENTIAL)}."
         )
     return LinearSegmentedColormap.from_list(f"pelagos_{key}", SEQUENTIAL[key])
+
+
+def cmap_for_variable(variable, default=None):
+    """Return the colormap for a dataset variable name, or ``default``.
+
+    Looks the variable up in :data:`VARIABLE_PALETTES` (case-insensitive) and
+    builds the matching palette; variables with no mapping fall back to
+    ``default`` (e.g. a matplotlib colormap name).
+
+    Parameters
+    ----------
+    variable : str
+        Dataset variable name, e.g. ``"DENSITY"`` or ``"CHLA_ADJUSTED"``.
+    default : optional
+        Returned when the variable has no palette. Default ``None``.
+    """
+    key = VARIABLE_PALETTES.get(str(variable).upper())
+    if key is None:
+        return default
+    return get_cmap(key)
