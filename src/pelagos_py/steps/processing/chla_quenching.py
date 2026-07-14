@@ -48,8 +48,8 @@ NIGHT_MAX_ELEVATION = -5.0  #: solar elevation (deg) below which a profile is "n
 COMPARE_BIN_METRES = 5.0  #: depth bin (m) for pairing day/night median fluorescence.
 COMPARE_SURFACE_LIMIT_METRES = 50.0  #: only bins within this depth of the surface are scored (the quenching layer, where methods differ).
 MAX_COMPARE_PROFILES = 200  #: cap on day profiles run through every method.
-MAX_TIMESERIES_POINTS = 60000  #: cap on points drawn in the right-hand timeseries.
 TIMESERIES_DEPTH_LIMIT = 180.0  #: only the top this-many metres are shown in the timeseries.
+SECTION_MARKER_SIZE = 1.5  #: scatter marker size (points^2) for the section plots.
 
 #: Night-reference tuning for the 'hemsley2015'/'thomalla2018' methods.
 NIGHT_REF_BIN_METRES = 1.0  #: depth bin (m) for averaging nighttime profiles into a reference.
@@ -237,6 +237,9 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 f"Choose from: {', '.join(methods)}"
             )
         method_function = methods[method_key]
+        # Kept so the diagnostics can re-run the configured method over a single
+        # profile to capture its decision internals (see ``_explain_profile``).
+        self._method_function = method_function
 
         # Methods differ in which auxiliary variables they need; check the ones
         # the chosen method relies on are present before doing any work.
@@ -411,6 +414,14 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         chl_corr = np.copy(chlf)
         chl_corr[(depth >= chlf_max_depth) & (~np.isnan(chlf))] = chlf_max
 
+        self._explain(
+            profile,
+            depth=depth,
+            chlf=chlf,
+            mld=mld,
+            z_ref=chlf_max_depth,
+            f_ref=chlf_max,
+        )
         return chl_corr
 
     # ------------------------------------------------------------------
@@ -489,6 +500,15 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         # Lift everything shallower than the quenching depth to the reference.
         chl_corr = np.copy(chlf)
         chl_corr[(z <= z_qd) & (~np.isnan(chlf))] = f_max
+
+        self._explain(
+            profile,
+            depth=depth,
+            chlf=chlf,
+            zeu=-zeu,
+            z_ref=-z_qd,
+            f_ref=f_max,
+        )
         return chl_corr
 
     def apply_hemsley2015_quenching_correction(self, profile):
@@ -535,6 +555,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         # Replace fluorescence over the euphotic zone with the bbp-based estimate.
         fill = (z >= 0) & (z <= zeu) & np.isfinite(bbp) & (~np.isnan(chlf))
         chl_corr[fill] = m * bbp[fill] + c
+
+        self._explain(profile, depth=depth, chlf=chlf, zeu=-zeu, z_ref=-zeu)
         return chl_corr
 
     def _build_night_references(self, method_key):
@@ -589,6 +611,9 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 "intercept": float(fit.intercept),
                 "r2": float(fit.rvalue ** 2),
                 "n": int(np.sum(sel)),
+                # Raw fitted points, kept so the diagnostics can scatter them.
+                "bbp": b[sel],
+                "fl": f[sel],
             }
             self.log(
                 f"Hemsley 2015: night regression Chl = {fit.slope:.4g}*bbp "
@@ -753,11 +778,24 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             fratio_layer = np.where(npq_layer, fratio, np.nan)
             if np.all(np.isnan(fratio_layer)):
                 return chlf
-            r_max = fratio[np.nanargmax(fratio_layer)]
+            idx_rmax = np.nanargmax(fratio_layer)
+            r_max = fratio[idx_rmax]
 
             chl_corr = np.copy(chlf)
             fill = npq_layer & np.isfinite(bbp) & (~np.isnan(chlf))
             chl_corr[fill] = bbp[fill] * r_max
+
+            self._explain(
+                profile,
+                branch="deep",
+                depth=depth,
+                ratio=fratio,
+                mld=-mld,
+                ipar15=-zi_par15,
+                z_ref=-z_ref,
+                r_max=r_max,
+                rmax_depth=float(depth[idx_rmax]),
+            )
         else:
             # --- Shallow-mixing X18_S08 hybrid (Terrats 2020) ----------------
             if not np.isfinite(mld):
@@ -785,6 +823,18 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
             above = (z <= mld) & np.isfinite(bbp) & (~np.isnan(chlf))
             chl_corr[above] = bbp[above] * r_mld
+
+            self._explain(
+                profile,
+                branch="shallow",
+                depth=depth,
+                mld=-mld,
+                ipar15=-zi_par15,
+                z_ref=-mld,
+                r_mld=r_mld,
+                sigmoid_depth=-z[below],
+                sigmoid_scale=s,
+            )
 
         # Never let the correction reduce fluorescence (fmax ignores NaNs).
         return np.fmax(chlf, chl_corr)
@@ -877,6 +927,15 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             & (corrected > chlf)
         )
         chl_corr[fill] = corrected[fill]
+
+        self._explain(
+            profile,
+            depth=depth,
+            chlf=chlf,
+            zeu=-zeu,
+            z_ref=-qd,
+            ref_idx=ref_idx,
+        )
         return chl_corr
 
     @staticmethod
@@ -962,8 +1021,13 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         legend; the lowest-RMSE correction method is given a highlighted border.
 
         **Middle** — an example day and night profile for the *configured*
-        method: unchanged points, the original (quenched) values at points that
-        were corrected, and the corrected values.
+        method (unchanged points, the original quenched values, and the
+        corrected values), with the day profile marking the method's own
+        quenching depth. A third panel shows *how* that method chose its
+        correction reference: for per-profile methods the example profile's
+        internals (the searched layer and the picked reference point); for the
+        night-reference methods the deployment-wide object used (Hemsley's global
+        night fl-bbp regression, Thomalla's night fl:bbp ratio profile).
 
         **Right** — the original and corrected fluorescence as depth-time
         sections, plus a map of where the correction was actually applied.
@@ -1242,14 +1306,58 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
     # --- Middle column: example profiles ------------------------------
 
     def _draw_example_profiles(self, fig, subspec):
-        gm = subspec.subgridspec(2, 1, hspace=0.3)
+        gm = subspec.subgridspec(3, 1, hspace=0.55)
         day_pn, night_pn = self._example_profiles()
+
+        # Capture the configured method's decision internals for the day profile
+        # so the day plot can mark the quenching depth and the bottom panel can
+        # show *how* the correction reference was chosen.
+        info = self._explain_profile(day_pn)
+        z_ref = info.get("z_ref") if info else None
+
         self._draw_profile_change(
-            fig.add_subplot(gm[0, 0]), day_pn, f"Example day profile (#{day_pn})"
+            fig.add_subplot(gm[0, 0]),
+            day_pn,
+            f"Example day profile (#{day_pn})",
+            ref_depth=z_ref,
         )
         self._draw_profile_change(
             fig.add_subplot(gm[1, 0]), night_pn, f"Example night profile (#{night_pn})"
         )
+        self._draw_decision_panel(fig.add_subplot(gm[2, 0]), info)
+
+    def _explain(self, profile, **info):
+        """Capture one profile's decision internals during diagnostics.
+
+        A no-op on the normal pipeline run (``_explain_target`` unset). When the
+        diagnostics set a target profile number, the configured method records
+        the quantities behind its correction (reference depth/value, the layer
+        it searched, etc.) so they can be drawn without re-deriving them.
+        """
+        target = getattr(self, "_explain_target", None)
+        if target is not None and int(profile["PROFILE_NUMBER"][0]) == target:
+            self._explain_info = info
+
+    def _explain_profile(self, day_pn):
+        """Run the configured method over one day profile to capture internals.
+
+        Returns the dict recorded by :meth:`_explain`, or ``None`` if the method
+        made no correction on that profile (e.g. missing inputs) or the profile
+        is absent.
+        """
+        subsets = self._profile_subsets({day_pn})
+        s = subsets.get(day_pn)
+        if s is None:
+            return None
+        self._explain_info = None
+        self._explain_target = day_pn
+        try:
+            self._method_function(s)
+        except Exception:
+            self._explain_info = None
+        finally:
+            self._explain_target = None
+        return self._explain_info
 
     def _example_profiles(self):
         """Pick a representative day and night profile for the configured method.
@@ -1288,7 +1396,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             night_pn = day_pn
         return day_pn, night_pn
 
-    def _draw_profile_change(self, ax, profile_number, title):
+    def _draw_profile_change(self, ax, profile_number, title, ref_depth=None):
         idx = np.where(self.data["PROFILE_NUMBER"].values == profile_number)[0]
         depth = self.data["DEPTH"].values[idx]
         orig = self.data_copy[self.apply_to].values[idx]
@@ -1310,9 +1418,166 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         ax.scatter(
             corr[changed], depth[changed], s=16, c="#d1495b", label="Corrected", zorder=3
         )
+        # The method's own quenching depth: the boundary above which it lifted the
+        # fluorescence to the chosen reference.
+        if ref_depth is not None and np.isfinite(ref_depth):
+            ax.axhline(
+                ref_depth,
+                ls="--",
+                lw=1.2,
+                c="#ff7f0e",
+                zorder=4,
+                label=f"Quenching depth ({-ref_depth:.0f} m)",
+            )
         ax.set_xlabel(self.apply_to, fontsize=8)
         ax.set_ylabel("DEPTH", fontsize=8)
         ax.set_title(title, fontsize=9)
+        ax.tick_params(labelsize=7)
+        ax.legend(fontsize=6.5, loc="lower right", framealpha=0.9)
+
+    # --- Middle column: how the correction reference was chosen --------
+
+    def _draw_decision_panel(self, ax, info):
+        """Show *how* the configured method chose its correction reference.
+
+        Per-profile methods (Xing 2012, Biermann, Xing 2018/Terrats) use the
+        example day profile's captured internals; the night-reference methods
+        (Hemsley, Thomalla) show the deployment-wide object they actually used.
+        """
+        method = self.method.lower()
+        drawers = {
+            "xing2012": self._decision_xing2012,
+            "biermann2015": self._decision_biermann,
+            "xing2018": self._decision_xing_terrats,
+            "terrats2020": self._decision_xing_terrats,
+            "hemsley2015": self._decision_hemsley,
+            "thomalla2018": self._decision_thomalla,
+        }
+        drawer = drawers.get(method)
+        if drawer is None:
+            self._decision_unavailable(ax, "No decision diagnostic for this method.")
+            return
+        # Hemsley reads its global regression, not the per-profile info.
+        if method != "hemsley2015" and not info:
+            self._decision_unavailable(
+                ax, "The method made no correction on the\nexample profile."
+            )
+            return
+        drawer(ax, info)
+
+    @staticmethod
+    def _decision_unavailable(ax, message):
+        ax.axis("off")
+        ax.text(0.5, 0.5, message, ha="center", va="center", fontsize=8)
+
+    def _decision_xing2012(self, ax, info):
+        depth, chlf = info["depth"], info["chlf"]
+        mld, z_ref, f_ref = info["mld"], info["z_ref"], info["f_ref"]
+        valid = np.isfinite(depth) & np.isfinite(chlf)
+        within = valid & (depth >= mld)
+        ax.scatter(chlf[valid], depth[valid], s=12, c="0.7", label="F (all)")
+        ax.scatter(chlf[within], depth[within], s=14, c="#3b7dd8", label="within MLD")
+        ax.axhline(mld, ls=":", c="black", lw=1.1, label=f"MLD ({-mld:.0f} m)")
+        ax.scatter(
+            [f_ref], [z_ref], marker="*", s=200, c="#d1495b", zorder=5,
+            label="reference Fmax",
+        )
+        ax.set_title("Xing 2012: reference = max F within MLD", fontsize=9)
+        self._decision_axes(ax, self.apply_to)
+
+    def _decision_biermann(self, ax, info):
+        depth, chlf = info["depth"], info["chlf"]
+        zeu, z_ref, f_ref = info["zeu"], info["z_ref"], info["f_ref"]
+        valid = np.isfinite(depth) & np.isfinite(chlf)
+        below = valid & (depth <= zeu)
+        ax.scatter(chlf[valid], depth[valid], s=12, c="0.7", label="F (all)")
+        ax.scatter(chlf[below], depth[below], s=14, c="#3b7dd8", label="below Zeu")
+        ax.axhline(zeu, ls=":", c="#2ca02c", lw=1.1, label=f"Zeu ({-zeu:.0f} m)")
+        ax.scatter(
+            [f_ref], [z_ref], marker="*", s=200, c="#d1495b", zorder=5,
+            label="max F below Zeu",
+        )
+        ax.set_title("Biermann 2015: reference = max F below Zeu", fontsize=9)
+        self._decision_axes(ax, self.apply_to)
+
+    def _decision_xing_terrats(self, ax, info):
+        label = self._METHOD_LABELS.get(self.method.lower(), self.method)
+        mld, ipar15 = info["mld"], info["ipar15"]
+        if info.get("branch") == "shallow":
+            # Terrats shallow-mixing branch: plot the sigmoid scaling applied
+            # below the MLD (this is the de-quenching "decision" here).
+            z, s = info["sigmoid_depth"], info["sigmoid_scale"]
+            order = np.argsort(-z)
+            ax.plot(s[order], z[order], c="#3b7dd8", lw=1.4, label="sigmoid scale s(z)")
+            ax.axhline(mld, ls=":", c="black", lw=1.1, label=f"MLD ({-mld:.0f} m)")
+            ax.set_title(f"{label} (shallow mixing): F/s below MLD", fontsize=9)
+            self._decision_axes(ax, "de-quench scale s(z)")
+            return
+        ratio, z_ref, depth = info["ratio"], info["z_ref"], info["depth"]
+        valid = np.isfinite(depth) & np.isfinite(ratio)
+        npq = valid & (depth >= z_ref)
+        ax.scatter(ratio[valid], depth[valid], s=12, c="0.7", label="F/bbp (all)")
+        ax.scatter(ratio[npq], depth[npq], s=14, c="#3b7dd8", label="NPQ layer")
+        ax.axhline(mld, ls=":", c="black", lw=1.1, label=f"MLD ({-mld:.0f} m)")
+        if np.isfinite(ipar15):
+            ax.axhline(
+                ipar15, ls="--", c="#9467bd", lw=1.1, label=f"iPAR=15 ({-ipar15:.0f} m)"
+            )
+        ax.scatter(
+            [info["r_max"]], [info["rmax_depth"]], marker="*", s=200, c="#d1495b",
+            zorder=5, label="R_max",
+        )
+        ax.set_title(f"{label} (deep mixing): reference = max F/bbp", fontsize=9)
+        self._decision_axes(ax, "F/bbp ratio")
+
+    def _decision_hemsley(self, ax, info):
+        reg = getattr(self, "_hemsley_regression", None)
+        if not reg or "bbp" not in reg:
+            self._decision_unavailable(ax, "No global night regression was fit.")
+            return
+        b, f = reg["bbp"], reg["fl"]
+        m, c = reg["slope"], reg["intercept"]
+        ax.scatter(b, f, s=8, c="#3b7dd8", alpha=0.4, edgecolors="none", label="night points")
+        xs = np.array([np.nanmin(b), np.nanmax(b)])
+        sign = "+" if c >= 0 else "-"
+        ax.plot(
+            xs, m * xs + c, c="#d1495b", lw=1.6,
+            label=f"F = {m:.3g}*bbp {sign} {abs(c):.3g}",
+        )
+        ax.text(
+            0.03, 0.97, f"R$^2$={reg['r2']:.2f}  (n={reg['n']})",
+            transform=ax.transAxes, va="top", ha="left", fontsize=7,
+            bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.85),
+        )
+        ax.set_title("Hemsley 2015: global night fl–bbp regression", fontsize=9)
+        ax.set_xlabel(self.bbp_var, fontsize=8)
+        ax.set_ylabel(self.apply_to, fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.legend(fontsize=6.5, loc="lower right", framealpha=0.9)
+
+    def _decision_thomalla(self, ax, info):
+        refs = getattr(self, "_night_refs", None)
+        ref_idx = info.get("ref_idx")
+        if not refs or ref_idx is None or ref_idx >= len(refs):
+            self._decision_unavailable(ax, "No night reference for this profile.")
+            return
+        ref = refs[ref_idx]
+        z_ref, zeu = info["z_ref"], info.get("zeu")
+        # ref["z"] is positive-down; the DEPTH axis is negative-down.
+        ax.plot(ref["ratio"], -ref["z"], c="#3b7dd8", lw=1.4, label="night fl:bbp ratio")
+        if zeu is not None and np.isfinite(zeu):
+            ax.axhline(zeu, ls=":", c="#2ca02c", lw=1.1, label=f"Zeu ({-zeu:.0f} m)")
+        if np.isfinite(z_ref):
+            ax.axhline(
+                z_ref, ls="--", c="#ff7f0e", lw=1.2, label=f"QD ({-z_ref:.0f} m)"
+            )
+        ax.set_title("Thomalla 2018: night fl:bbp ratio & QD", fontsize=9)
+        self._decision_axes(ax, "night fl:bbp ratio")
+
+    @staticmethod
+    def _decision_axes(ax, xlabel):
+        ax.set_xlabel(xlabel, fontsize=8)
+        ax.set_ylabel("DEPTH", fontsize=8)
         ax.tick_params(labelsize=7)
         ax.legend(fontsize=6.5, loc="lower right", framealpha=0.9)
 
@@ -1325,8 +1590,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         orig = self.data_copy[self.apply_to].values
         corr = self.data[self.output_as].values
 
-        # Keep only the top TIMESERIES_DEPTH_LIMIT metres, then downsample within
-        # it, so the point budget is spent where the quenching signal lives.
+        # Keep points with a valid time/depth in the top TIMESERIES_DEPTH_LIMIT m.
         finite = (
             ~pd.isnull(time)
             & np.isfinite(depth)
@@ -1334,34 +1598,42 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         )
         time, depth = time[finite], depth[finite]
         orig, corr = orig[finite], corr[finite]
-        if time.size > MAX_TIMESERIES_POINTS:
-            keep = np.linspace(0, time.size - 1, MAX_TIMESERIES_POINTS).astype(int)
-            time, depth, orig, corr = time[keep], depth[keep], orig[keep], corr[keep]
 
         changed = np.isfinite(corr) & np.isfinite(orig) & (np.abs(corr - orig) > 1e-9)
         vmin, vmax = self._robust_vlim(orig, corr)
 
         ax1 = fig.add_subplot(gr[0, 0])
-        order = self._high_on_top(orig)  # draw higher fluorescence last (on top)
         sc1 = ax1.scatter(
-            time[order], depth[order], c=orig[order], cmap="viridis",
-            vmin=vmin, vmax=vmax, s=0.8,
+            time, depth, c=orig, cmap="viridis", vmin=vmin, vmax=vmax,
+            s=SECTION_MARKER_SIZE, rasterized=True,
         )
         ax1.set_title(f"Original fluorescence (top {TIMESERIES_DEPTH_LIMIT:.0f} m)", fontsize=9)
 
         ax2 = fig.add_subplot(gr[1, 0], sharex=ax1, sharey=ax1)
-        order = self._high_on_top(corr)
         sc2 = ax2.scatter(
-            time[order], depth[order], c=corr[order], cmap="viridis",
-            vmin=vmin, vmax=vmax, s=0.8,
+            time, depth, c=corr, cmap="viridis", vmin=vmin, vmax=vmax,
+            s=SECTION_MARKER_SIZE, rasterized=True,
         )
         ax2.set_title(f"Quenching-corrected fluorescence (top {TIMESERIES_DEPTH_LIMIT:.0f} m)", fontsize=9)
 
         ax3 = fig.add_subplot(gr[2, 0], sharex=ax1, sharey=ax1)
-        ax3.scatter(time[~changed], depth[~changed], c="#d9d9d9", s=0.8, label="Unchanged")
-        ax3.scatter(time[changed], depth[changed], c="#d1495b", s=0.8, label="Corrected")
+        ax3.scatter(
+            time[~changed], depth[~changed], c="#d9d9d9",
+            s=SECTION_MARKER_SIZE, rasterized=True, label="Unchanged",
+        )
+        ax3.scatter(
+            time[changed], depth[changed], c="#d1495b",
+            s=SECTION_MARKER_SIZE, rasterized=True, label="Corrected",
+        )
         ax3.set_title("Quenching layer (corrected points)", fontsize=9)
         ax3.legend(fontsize=6.5, loc="lower right", framealpha=0.9, markerscale=8)
+
+        # Overlay per-profile MLD, euphotic-depth and quenching-depth lines.
+        line_t, line_mld, line_qd, line_zeu = self._section_reference_lines()
+        for ax in (ax1, ax2, ax3):
+            self._overlay_reference_lines(
+                ax, line_t, line_mld, line_qd, line_zeu, legend=(ax is ax1)
+            )
         ax1.set_ylim(-TIMESERIES_DEPTH_LIMIT, 0)
 
         for sc, ax in ((sc1, ax1), (sc2, ax2)):
@@ -1376,11 +1648,79 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         ax3.set_xlabel("TIME", fontsize=8)
         plt.setp(ax3.get_xticklabels(), rotation=30, ha="right")
 
+    def _section_reference_lines(self):
+        """Per-profile MLD, euphotic depth and quenching depth (negative-down m).
+
+        The quenching depth is the deepest point the correction actually changed
+        in each profile - a method-agnostic marker matching the red 'Corrected'
+        points. MLD is read from the ``MLD`` variable when present; the euphotic
+        depth (Zeu, 1% light) is derived from the PAR profile when ``par_var`` is
+        present. All are ``NaN`` where undefined (e.g. night, or a missing
+        input), so the drawn lines break over those profiles. Sorted by time.
+        """
+        pnum = self.data["PROFILE_NUMBER"].values
+        depth = self.data["DEPTH"].values
+        orig = self.data_copy[self.apply_to].values
+        corr = self.data[self.output_as].values
+        changed = np.isfinite(corr) & np.isfinite(orig) & (np.abs(corr - orig) > 1e-9)
+        mld_all = self.data["MLD"].values if "MLD" in self.data.data_vars else None
+        par_all = (
+            self.data[self.par_var].values
+            if self.par_var in self.data.data_vars
+            else None
+        )
+
+        times, mld, qd, zeu = [], [], [], []
+        for pn in self.sun_args.index:
+            idx = np.where(pnum == pn)[0]
+            if idx.size == 0:
+                continue
+            times.append(pd.to_datetime(self.sun_args.loc[pn, "TIME"]).to_datetime64())
+            in_profile = changed[idx]
+            qd.append(float(np.min(depth[idx][in_profile])) if np.any(in_profile) else np.nan)
+            if mld_all is not None:
+                finite_mld = mld_all[idx][np.isfinite(mld_all[idx])]
+                mld.append(float(finite_mld[0]) if finite_mld.size else np.nan)
+            else:
+                mld.append(np.nan)
+            if par_all is not None:
+                # estimate_euphotic_depth wants positive-down depth; store as
+                # negative-down to match the DEPTH axis.
+                zeu_val = estimate_euphotic_depth(par_all[idx], -depth[idx])
+                zeu.append(-zeu_val if np.isfinite(zeu_val) else np.nan)
+            else:
+                zeu.append(np.nan)
+
+        times = np.asarray(times, dtype="datetime64[ns]")
+        order = np.argsort(times)
+        return (
+            times[order],
+            np.asarray(mld)[order],
+            np.asarray(qd)[order],
+            np.asarray(zeu)[order],
+        )
+
     @staticmethod
-    def _high_on_top(values):
-        """Plot order that draws higher (finite) values last, so they sit on top."""
-        values = np.asarray(values, dtype=float)
-        return np.argsort(np.where(np.isfinite(values), values, -np.inf))
+    def _overlay_reference_lines(ax, times, mld, qd, zeu, legend=False):
+        """Draw the MLD, euphotic-depth and quenching-depth lines on a panel.
+
+        NaNs are dropped per line so valid points connect across the whole
+        record: quenching depth and Zeu are only defined on daytime profiles, so
+        plotting them with the NaN night gaps in place would leave the isolated
+        valid points invisible.
+        """
+        drawn = False
+        for values, colour, label in (
+            (mld, "black", "MLD"),
+            (zeu, "#2ca02c", "Euphotic depth (Zeu)"),
+            (qd, "#ff7f0e", "Quenching depth"),
+        ):
+            valid = np.isfinite(values)
+            if np.any(valid):
+                ax.plot(times[valid], values[valid], c=colour, lw=1.1, label=label)
+                drawn = True
+        if legend and drawn:
+            ax.legend(fontsize=6.5, loc="upper right", framealpha=0.9)
 
     @staticmethod
     def _robust_vlim(*arrays):

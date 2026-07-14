@@ -498,20 +498,9 @@ steps:
       # [par_var]:
       #   Downwelling PAR variable used by 'biermann2015'/'xing2018'/'terrats2020'/'hemsley2015'/'thomalla2018'.
       par_var: DOWNWELLING_PAR
-      # [mld_settings]
-      #   Settings to tune the thresholding method for determining mixed later depth (MLD) which is a
-      #   required intermediate product for this correction.
-      mld_settings:
-        # [threshold_on]:
-        #   Variable to use for determining the MLD
-        threshold_on: TEMP
-        # [reference_depth]:
-        #   The near-surface point used to set the reference.
-        reference_depth: -10
-        # [threshold]:
-        #   The MLD is determined to be the first depth point at which the difference between a measurement and
-        #   its reference is greater than the threshold.
-        threshold: 0.2
+      # Note: the MLD-based methods ('xing2012'/'xing2018'/'terrats2020') read the
+      #   'MLD' variable produced by a preceding 'Mixed Layer Depth' step; configure
+      #   the MLD method and thresholds there, not here.
       # [plot_profiles]:
       #   List of profile numbers to be plotted
       plot_profiles: [101, 200, 201, 300, 301, 400]
