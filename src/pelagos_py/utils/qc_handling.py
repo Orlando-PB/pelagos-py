@@ -36,8 +36,17 @@ class QCHandlingMixin:
         self.check_data()
         self.data = self.context["data"].copy(deep=True)
 
-        # Make a copy of the data for reference
-        self.data_copy = self.data.copy(deep=True)
+        # Pristine "before" snapshot for reconstruct_data/update_qc. Those only
+        # read back the filter_settings variables (and their _QC), so copy just
+        # those rather than the whole dataset. Steps needing a broader snapshot
+        # (e.g. Salinity/Chla diagnostics) replace this in their own run().
+        snapshot_vars = [
+            name
+            for var in self.filter_settings
+            for name in (var, f"{var}_QC")
+            if name in self.data
+        ]
+        self.data_copy = self.data[snapshot_vars].copy(deep=True)
 
         # Check that the variables are present for filter execusion
         missing_variables = []
@@ -108,12 +117,16 @@ class QCHandlingMixin:
             )  # required because nan == nan is False
             mask = is_same | both_nan
 
-            # Make a refference table for all possible flag updates
-            updated_flags = xr.apply_ufunc(
-                lambda x: self.flag_mapping.get(x),
-                self.data[f"{var}_QC"],
-                vectorize=True,
-            )
+            # Remap flags per flag_mapping. Flags with no remap rule (incl. NaN)
+            # pass through unchanged. Done with xr.where rather than a vectorized
+            # dict lookup so NaN flags survive (and the dtype is preserved).
+            updated_flags = self.data[f"{var}_QC"].copy()
+            for old_flag, new_flag in self.flag_mapping.items():
+                if old_flag == new_flag:
+                    continue
+                updated_flags = xr.where(
+                    self.data[f"{var}_QC"] == old_flag, new_flag, updated_flags
+                )
 
             # Where data has changed, replace the old flag with the updated flag
             self.data[f"{var}_QC"] = xr.where(
