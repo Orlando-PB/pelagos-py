@@ -165,6 +165,20 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
                     f"Invalid parameter type(s) for '{step_name}': {bad_str}."
                 )
 
+        # Check for out-of-options values (e.g. an unknown 'method' choice).
+        if schema is not None:
+            bad_options = parameter_spec.option_errors(schema, parameters)
+            if bad_options:
+                bad_str = "; ".join(bad_options)
+                logger.error(
+                    "Validation Failed: '%s' has invalid parameter value(s): %s.",
+                    step_name,
+                    bad_str,
+                )
+                raise ValueError(
+                    f"Invalid parameter value(s) for '{step_name}': {bad_str}."
+                )
+
         # Apply QC nests each test's settings under qc_settings — validate the
         # required parameters of every requested test up front. (Their variable
         # requirements are checked by Apply QC at run time, where _QC columns and
@@ -215,6 +229,19 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
                         )
                         raise ValueError(
                             f"Invalid parameter type(s) for QC test '{qc_name}': {bad_str}."
+                        )
+
+                if qc_schema is not None:
+                    qc_bad_options = parameter_spec.option_errors(qc_schema, qc_params or {})
+                    if qc_bad_options:
+                        bad_str = "; ".join(qc_bad_options)
+                        logger.error(
+                            "Validation Failed: QC test '%s' has invalid parameter value(s): %s.",
+                            qc_name,
+                            bad_str,
+                        )
+                        raise ValueError(
+                            f"Invalid parameter value(s) for QC test '{qc_name}': {bad_str}."
                         )
 
                 # Resolve this test's variable requirements the same way Apply QC

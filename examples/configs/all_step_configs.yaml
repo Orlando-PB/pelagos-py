@@ -259,7 +259,7 @@ steps:
           profile_length: 1000
           # [depth_range]:
           #   DEPTH range that a profile must have at least one point in, otherwise it is flagged 3
-          depth_range: [-.inf, 0]
+          depth_range: [0, .inf]
 
         # flag_full_profile (*/flag_full_profile.py):
         #   Flag: 4 (bad)
@@ -444,9 +444,9 @@ steps:
 # Note that the variables added to the dataset by these steps will appear as <input>_ADJUSTED unless
 # <input> already has the _ADJUSTED suffix, in which case, the input will be modified inplace.
 
-# Chla Deep Correction (src/pelagos_py/steps/processing/chla.py -> chla_deep_correction):
-# Subtracts a constant value from the data so that deep CHLA values are zeroed.
-  - name: "Chla Deep Correction"
+# Deep Correction (src/pelagos_py/steps/processing/deep_correction.py -> deep_correction):
+# Subtracts a constant dark offset so that deep, signal-free values are zeroed.
+  - name: "Deep Correction"
     parameters:
       # [apply_to]:
       #   Name of the variable to apply the correction to.
@@ -454,42 +454,64 @@ steps:
       # [dark_value]:
       #   If null, the dark value will be detemined from the data, else it will use the specified value
       dark_value: null
+      # [depth_var]:
+      #   Vertical-coordinate variable used to find deep data (deeper = larger value).
+      depth_var: PRES
       # [depth_threshold]:
-      #   Data used for calculating the dark value will only be taken from below this depth.
-      depth_threshold: -550
+      #   Only data where depth_var exceeds this is used to compute the dark value.
+      depth_threshold: 950
+      # [n_profiles]:
+      #   Number of deep profiles (in order of occurrence) used to estimate the dark value.
+      n_profiles: 5
+      # [smoothing_window]:
+      #   Rolling-median window (points) applied along each profile before sampling.
+      smoothing_window: 5
+      # [max_valid_value]:
+      #   Deep values at or above this are ignored (guards against non-dark readings).
+      max_valid_value: 5
+      # [min_valid_points]:
+      #   A profile must have at least this many valid deep points to contribute.
+      min_valid_points: 3
     # [diagnostics]:
-    #   Create a plot showing CHLA values over depth with lines for the dark value and depth threshold
+    #   Plot the deep profiles used and the deep values before/after correction.
     diagnostics: false
 
-# Chla Quenching Correction (src/pelagos_py/steps/processing/chla.py -> chla_quenching_correction):
+# CHLA Quenching (src/pelagos_py/steps/processing/chla_quenching.py -> chla_quenching_correction):
 # Offers a selection of Non-photochemical quenching correction techniques for removing Chla signal
 # supression caused by phytoplankton quenching.
-  - name: "Chla Quenching Correction"
+  - name: "CHLA Quenching"
     parameters:
       # [method]:
-      #   Method used for quenching correction. Currently only Argo is available which follows Xing et al. 2012
-      method: Argo
+      #   Method used for quenching correction. Implemented: 'xing2012' (MLD-based),
+      #   'biermann2015' (euphotic-depth-based, needs PAR), 'xing2018' and
+      #   'terrats2020' (backscatter-based, need BBP + PAR + MLD), 'hemsley2015'
+      #   (global night fluorescence-bbp regression, needs BBP + PAR), 'thomalla2018'
+      #   (per-night fl:bbp ratio profile, needs BBP + PAR), 'sackmann2008' (max
+      #   fl:bbp ratio within the MLD, needs BBP + MLD) and 'swart2015' (max fl:bbp
+      #   ratio within the euphotic zone, needs BBP + PAR).
+      method: xing2012
       # [apply_to]:
       #   Name of the variable to apply the correction to.
       apply_to: CHLA
-      # [mld_settings]
-      #   Settings to tune the thresholding method for determining mixed later depth (MLD) which is a
-      #   required intermediate product for this correction.
-      mld_settings:
-        # [threshold_on]:
-        #   Variable to use for determining the MLD
-        threshold_on: TEMP
-        # [reference_depth]:
-        #   The near-surface point used to set the reference.
-        reference_depth: -10
-        # [threshold]:
-        #   The MLD is determined to be the first depth point at which the difference between a measurement and
-        #   its reference is greater than the threshold.
-        threshold: 0.2
-      # [plot_profiles]:
-      #   List of profile numbers to be plotted
-      plot_profiles: [101, 200, 201, 300, 301, 400]
-    diagnostics: true
+      # [bbp_var]:
+      #   Backscatter variable used by the backscatter-based methods. Defaults to the
+      #   despiked 'BBP700_BASELINE'; falls back through BBP700/BBP532 if absent.
+      bbp_var: BBP700_BASELINE
+      # [par_var]:
+      #   Downwelling PAR variable used by the PAR-based methods.
+      par_var: DOWNWELLING_PAR
+      # [interpolate_par]:
+      #   For PAR-based methods, fill casts lacking usable PAR from the nearest
+      #   valid cast on each side so every cast can be corrected.
+      interpolate_par: true
+      # [interpolate_par_max_gap_hours]:
+      #   Only used when interpolate_par is true: a cast is filled only if a
+      #   valid-PAR cast exists within this many hours on at least one side.
+      interpolate_par_max_gap_hours: 12.0
+      # Note: the MLD-based methods ('xing2012'/'xing2018'/'terrats2020'/'sackmann2008')
+      #   read the 'MLD' variable produced by a preceding 'Mixed Layer Depth' step;
+      #   configure the MLD method and thresholds there, not here.
+    diagnostics: false
 
 
 # ------------------------------------------------------------------------------------------- Backscatter processing -------------------------------------------------------------------------------------------

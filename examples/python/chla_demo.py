@@ -1,22 +1,22 @@
+# TEMP: CHLA-focused cut of internal_config_demo.py — only the steps needed to
+# reach the two CHLA steps (Deep Correction + CHLA Quenching), with
+# their diagnostics turned on. The Mixed Layer Depth step keys off DENSITY, so the
+# CTD -> salinity -> density chain (and Find Profiles for PROFILE_NUMBER) is
+# kept, along with the BBP chain (feeds the quenching step); the format-check
+# and QC-only steps are dropped.
 import yaml
 from pelagos_py.pipeline import Pipeline
 
 BASE_CONFIG_YAML = """
 pipeline:
-  name: Example CTD Processing Pipeline
-  description: A pipeline for processing CTD data
+  name: CHLA Demo Pipeline
+  description: Minimal pipeline exercising the CHLA steps with diagnostics on
   log_file: None
 
 steps:
   - name: Load OG1
     parameters:
       file_path: examples/data/OG1/Nelson_646_R.nc
-    diagnostics: false
-
-  - name: Format Checker
-    parameters:
-      standards: ["og"]
-      proceed_on_fail: true
     diagnostics: false
 
   - name: Correct Values
@@ -26,42 +26,6 @@ steps:
       intercept: 0.0
       expected_range: [20, 45]
       corrected_units: mS/cm
-    diagnostics: false
-
-  - name: Apply QC
-    parameters:
-      qc_settings:
-        impossible date qc: {}
-        impossible location qc: {}
-        position on land qc: {}
-    diagnostics: false
-
-  - name: Apply QC
-    parameters:
-      qc_settings:
-
-        range qc:
-          variable_ranges:
-            PRES:
-              3: [-2.4, -5]
-              4: [-5, -.inf]
-            TEMP:
-              3: [0, 30]
-              4: [-2.5, 40]
-            CNDC:
-              3: [5, 42]
-              4: [2, 45]
-          also_flag:
-            PRES: [CNDC, TEMP]
-            CNDC: [PRES, TEMP]
-            TEMP: [PRES, CNDC]
-
-        stuck value qc:
-          variables:
-            PRES: 2
-          also_flag:
-            PRES: [CNDC, TEMP]
-          plot: [PRES]
     diagnostics: false
 
   - name: Interpolate Data
@@ -110,32 +74,33 @@ steps:
   # noise-level backscatter can't blow up the fl:bbp ratio.
   - name: BBP from Beta
     parameters:
-      theta: 124
-      xfactor: 1.076
+      theta: 124               # Effective optical backscatter scattering angle (degrees)
+      xfactor: 1.076           # Chi factor scaling particulate scattering to total backscatter
     diagnostics: false
 
   - name: Isolate BBP Spikes
     parameters:
-      window_size: 50
-      method: median
+      window_size: 50          # Filter window size in samples
+      method: median           # Filter method used to determine the baseline
     diagnostics: false
 
-  # ======================= CHLA SECTION =======================
-  # Mixed layer depth (defaults: auto method -> DENSITY) - consumed by the
+  # ======================= CHLA SECTION START =======================
+  # Mixed layer depth (defaults: auto method → DENSITY) — consumed by the
   # CHLA Quenching step below.
   - name: Mixed Layer Depth
     diagnostics: false
 
-  # Range test on the raw CHLA before correction: probably-bad (3) outside
-  # 0-15, bad (4) outside -1-20 mg m-3.
+  # Global range test on the raw CHLA: probably-bad (3) outside 0.14-50,
+  # bad (4) outside 0-100. Most-severe flag wins on overlap, so e.g. a
+  # negative value is 4 and a 0.1 value is 3; anything in-band is good (1).
   - name: Apply QC
     parameters:
       qc_settings:
         range qc:
           variable_ranges:
             CHLA:
-              3: [0, 15, outside]
-              4: [-1, 20, outside]
+              3: [0.14, 50, outside]
+              4: [0, 100, outside]
     diagnostics: false
 
   # Spike test on CHLA (per-profile MAD-style residual test).
@@ -151,16 +116,13 @@ steps:
 
   - name: Deep Correction
     parameters:
-      apply_to: CHLA
-      dark_value: null
-      depth_var: PRES
       depth_threshold: 950
     diagnostics: false
 
   - name: CHLA Quenching
     parameters:
       method: thomalla2018
-    diagnostics: false
+    diagnostics: true
 
   # Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep
   # and quenching corrections pushed any values out of range.
@@ -170,9 +132,10 @@ steps:
         range qc:
           variable_ranges:
             CHLA_ADJUSTED:
-              3: [0, 15, outside]
-              4: [-1, 20, outside]
+              3: [0.14, 50, outside]
+              4: [0, 100, outside]
     diagnostics: false
+  # ======================== CHLA SECTION END ========================
 """
 
 

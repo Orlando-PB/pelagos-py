@@ -55,8 +55,8 @@ class valid_profile_qc(BaseQC):
         shorter than this are flagged bad (4). Default ``100``.
     depth_range : tuple of float, optional
         ``(min, max)`` depth window (in the same units/sign convention as ``DEPTH``,
-        i.e. negative downward) that a profile must reach into. A profile with no data
-        inside this window is flagged probably bad (3). Default ``(-1000, 0)``.
+        i.e. positive downward) that a profile must reach into. A profile with no data
+        inside this window is flagged probably bad (3). Default ``(0, 1000)``.
 
     Examples
     --------
@@ -80,7 +80,7 @@ class valid_profile_qc(BaseQC):
             qc_settings:
               valid profile qc:
                 profile_length: 50
-                depth_range: [-1000, 0]
+                depth_range: [0, 1000]
           diagnostics: true  # plot DEPTH vs index, coloured by the resulting flag
     """
 
@@ -93,7 +93,7 @@ class valid_profile_qc(BaseQC):
         },
         "depth_range": {
             "type": list,
-            "default": (-1000, 0),
+            "default": (0, 1000),
             "description": "(min, max) depth window a profile must reach into.",
         },
     }

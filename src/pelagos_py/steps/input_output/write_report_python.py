@@ -25,6 +25,7 @@ so no external toolchain (LaTeX, Sphinx) is required to produce the PDF.
 #### Mandatory imports ####
 from pelagos_py.steps.base_step import BaseStep, register_step
 import pelagos_py.utils.diagnostics as di
+import pelagos_py.utils.palettes as palettes
 
 #### Custom imports ####
 from fpdf import FPDF
@@ -1060,60 +1061,42 @@ _MAP_START = "#9fe0a0"
 
 #   Cross-section panels (PRES vs TIME, coloured by a variable). Each panel
 #   names the variable to colour by (first match wins, so OG1/lower-case and
-#   BBP700/BBP532 fallbacks can be listed in preference order) and the exact
-#   colourmap stops (low value -> high value; not reversed) used to build a
-#   LinearSegmentedColormap. ``special`` flags BBP, which is drawn largest-on-top
-#   with smaller markers so its sharp spikes surface rather than hide behind
-#   ordinary points.
+#   BBP700/BBP532 fallbacks can be listed in preference order) and pulls its
+#   colourmap stops from the shared ``palettes`` module (single source of truth,
+#   so a palette tweak there updates every plot). ``special`` flags BBP, which is
+#   drawn largest-on-top with smaller markers so its sharp spikes surface rather
+#   than hide behind ordinary points.
 _CROSS_SECTION_PANELS = (
     {
         "label": "Temperature",
         "candidates": ("TEMP", "TEMPERATURE", "temp"),
-        "stops": [
-            "#1b1c6e", "#365292", "#5286b7", "#8db4c4", "#dbe5cd",
-            "#f1d8b4", "#d9997e", "#c05e4c", "#a0372b", "#811910",
-        ],
+        "stops": palettes.SEQUENTIAL["temperature"],
     },
     {
         "label": "Salinity",
         "candidates": ("PRAC_SALINITY", "ABS_SALINITY", "PSAL", "SALINITY", "salinity"),
-        "stops": [
-            "#f9e8b1", "#f1c38f", "#e8a074", "#db7c5f", "#cb5c58",
-            "#b2425c", "#943061", "#732460", "#511c53", "#321340",
-        ],
+        "stops": palettes.SEQUENTIAL["salinity"],
     },
     {
         "label": "Density",
         "candidates": ("DENSITY", "density", "SIGMA0", "SIGMA_THETA", "POTDENS"),
-        "stops": [
-            "#e6f1f7", "#c4d8e8", "#a6bed9", "#8ba4c9", "#7489b8", "#636c9f",
-            "#595388", "#55406e", "#4e3055", "#3f2040", "#2e1226",
-        ],
+        "stops": palettes.SEQUENTIAL["density"],
     },
     {
         "label": "Oxygen",
         "candidates": ("MOLAR_DOXY", "molar_doxy", "DOXY", "molar_deoxy"),
-        "stops": [
-            "#400000", "#5c0000", "#780000", "#808080", "#8c8c8c", "#979797",
-            "#a3a3a3", "#aeaeae", "#baba10", "#dbdb0a", "#fdfd00",
-        ],
+        "stops": palettes.SEQUENTIAL["oxygen"],
     },
     {
         "label": "Chlorophyll",
         "candidates": ("CHLA_ADJUSTED", "CHLA", "chla_adjusted", "CHLOROPHYLL"),
-        "stops": [
-            "#182548", "#2c5398", "#4a88a4", "#87b8b5", "#dae4da",
-            "#e6d992", "#a8ab3e", "#56872e", "#285932", "#1b2617",
-        ],
+        "stops": palettes.SEQUENTIAL["chlorophyll"],
     },
     {
         "label": "Backscatter",
         "candidates": ("BBP700", "BBP532", "BBP", "bbp"),
         "special": "bbp",
-        "stops": [
-            "#cccccc", "#737373", "#000000", "#1335f5", "#3f8df7",
-            "#67dffb", "#a1fc4e", "#f8d748", "#ef8733", "#ea3323",
-        ],
+        "stops": palettes.SEQUENTIAL["backscatter"],
     },
 )
 
